@@ -307,13 +307,17 @@ class RenderLoop {
         }
     }
 }
+class View {
+    drawView(ctx, drawables) {}
+}
 //View
 //  maintains viewport state, draws Drawable arrays based upon state, can pass viewContext to Drawables (i.e. 3d drawables need view context), interacts with ctx,
 //  has viewStart and viewEnd callbacks
-class SimpleView {
+class SimpleView extends View {
     //skewing is also possible, but not implemented in this version of view
     //TODO: A version of View with this signature: constructor(dwidth=100, dheight=100, dx=0, dy=0, drot=0, sx=0, sy=0, zoomX=1, zoomY=1, srot=0)
     constructor(dwidth=100, dheight=100, dx=0, dy=0, sx=0, sy=0, zoomX=1, zoomY=1) {
+        super()
         this.dwidth=dwidth|0
         this.dheight=dheight|0
         this.dx=dx|0
@@ -326,7 +330,7 @@ class SimpleView {
         this.zoomY=+zoomY
     }
     
-    drawScene(ctx, drawables) {
+    drawView(ctx, drawables) {
         //TODO: if sprite outside boundaries, don't draw it, consider zoom&rotation of view and rotation of sprite
         ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
         
@@ -348,6 +352,144 @@ class SimpleView {
         ctx.clearRect(0, this.dy+this.dheight, this.dx+this.dwidth, ctx.canvas.height)
         ctx.fillStyle = "pink"
         ctx.clearRect(0, 0, this.dx, this.dy+this.dheight)
+    }
+}
+//Scene
+//  manages Drawables and Views, controls view activation order, virtual canvas layering, sprite depth, other sprite meta information, has one default view
+class Scene {
+    constructor(canvas) {
+        if (!canvas)
+            throw new TypeError("Parametererror: canvas required!")
+        
+        this.canvas = canvas
+        if (!this.canvas.getContext)
+            throw new TypeError("Context could not be retrieved from canvas!")
+        
+        this.ctx = this.canvas.getContext('2d')
+        
+        this.osCanvas = document.createElement("canvas");
+        this.osCanvas.width = this.canvas.width;
+        this.osCanvas.height = this.canvas.height;
+        this.osCtx = this.osCanvas.getContext("2d");
+        
+        this._drawableHash = {}
+        this._drawableArr = []
+        
+        this._viewHash = {}
+        this._viewArr = []
+        
+        this.addView("default", new SimpleView(this.canvas.width, this.canvas.height))
+    }
+    
+    drawScene() {
+        for (let i = 0; i < this._viewArr.length; i++) {
+            this.osCtx.clearRect(0, 0, this.osCtx.width, this.osCtx.height)
+            this._viewArr[i].drawView(this.osCtx, this._drawableArr)
+            //optimize this line:
+            this.ctx.drawImage(this.osCanvas, 0, 0)
+        }
+    }
+    
+    //view actions
+    addView(name, view, depth=0) {
+        if (!name)
+            throw new TypeError("Parametererror: name required!")
+        if (!view)
+            throw new TypeError("Parametererror: view required!")
+        if (!(view instanceof View))
+            throw new TypeError("Parametererror: view must be an instance of View!")
+        if (this._viewHash[name] !== undefined)
+            throw new Error("View with this name already exists")
+        
+        this._viewHash[name] = view
+        this._viewHash[name]._rl_depth = depth
+        //insert into array at proper position
+        this._spliceIntoOrder(view, this._viewArr)
+        
+        return this
+    }
+    
+    getView(name) {
+        return this._viewHash[name]
+    }
+    
+    deleteView(name) {
+        //remove from array
+        this._viewArr.splice(this._viewHash[name]._rl_index, 1)
+        //remove from hash
+        delete this._viewHash[name]
+    }
+    
+    setViewDepth(name, depth=0) {
+        //remove from array
+        this._viewArr.splice(this._viewHash[name]._rl_index, 1)
+        this._viewHash[name]._rl_depth = depth
+        //reinsert
+        this._spliceIntoOrder(this._viewHash[name], this._viewArr)
+    }
+    
+    getViewDepth(name) {
+        return this._viewHash[name]._rl_depth
+    }
+    
+    //drawable actions
+    addDrawable(name, drawable, depth=0) {
+        if (!name)
+            throw new TypeError("Parametererror: name required!")
+        if (!drawable)
+            throw new TypeError("Parametererror: drawable required!")
+        if (!(drawable instanceof Drawable))
+            throw new TypeError("Parametererror: drawable must be an instance of Drawable!")
+        if (this._drawableHash[name] !== undefined)
+            throw new Error("Drawable with this name already exists")
+        
+        this._drawableHash[name] = drawable
+        this._drawableHash[name]._rl_depth = depth
+        //insert into array at proper position
+        this._spliceIntoOrder(drawable, this._drawableArr)
+        
+        return this
+    }
+    
+    getDrawable(name) {
+        return this._drawableHash[name]
+    }
+    
+    deleteDrawable(name) {
+        //remove from array
+        this._drawableArr.splice(this._drawableHash[name]._rl_index, 1)
+        //remove from hash
+        delete this._drawableHash[name]
+    }
+    
+    setDrawableDepth(name, depth=0) {
+        //remove from array
+        this._drawableArr.splice(this._drawableHash[name]._rl_index, 1)
+        this._drawableHash[name]._rl_depth = depth
+        //reinsert
+        this._spliceIntoOrder(this._drawableHash[name], this._drawableArr)
+    }
+    
+    getDrawableDepth(name) {
+        return this._drawableHash[name]._rl_depth
+    }
+    
+    _spliceIntoOrder(object, arr) {
+        var low = 0,
+            high = arr.length
+
+        while (low < high) {
+            var mid = (low + high) >>> 1
+            if (arr[mid]._rl_depth < object._rl_depth) low = mid + 1
+            else high = mid
+        }
+        
+        object._rl_index = low
+        arr.splice(low, 0, object)
+        //update index counter of sprites being pushed up by insertion
+        for (let i = low+1; i < arr.length; i++) {
+            arr[i]._rl_index++
+        }
     }
 }
 
@@ -574,6 +716,7 @@ class Input {
 
 //TESTING:
 //const renderLoop = new DebugRenderLoop(document.getElementById("canvas"))
+const scene = new Scene(document.getElementById("canvas"))
 
 const input = new Input(document.getElementById("canvas"))
 const pool = new MediaLoadPool()
@@ -593,28 +736,21 @@ pool.onProgress = (a,b) => {
 pool.start()
 pool.onComplete = () => {
     
-    const offscreenCanvas = document.createElement("canvas");
-    offscreenCanvas.width = document.getElementById("canvas").width;
-    offscreenCanvas.height = document.getElementById("canvas").height;
-    const offscreenContext = offscreenCanvas.getContext("2d");
-    
-    const doodleer = new SimpleView(100, 100, 40, 40, 0, 0, 0.5, 0.5)
-    doodleer.drawScene(offscreenContext, [new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0),new Sprite(img2, 70, 70)])
-    
-    document.getElementById("canvas").getContext('2d').drawImage(offscreenCanvas,0,0)
-    
-    offscreenContext.clearRect(0,0,offscreenCanvas.width, offscreenCanvas.height)
-    
-    const aa = new SimpleView(100, 100, 140, 140)
-    aa.drawScene(offscreenContext, [new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0),new Sprite(img2, 70, 70)])
-    
-    document.getElementById("canvas").getContext('2d').drawImage(offscreenCanvas,0,0)
-    
-    //constructor(dwidth=100, dheight=100, dx=0, dy=0, sx=0, sy=0, zoomX=1, zoomY=1) {
+    //const doodleer = new SimpleView(100, 100, 40, 40, 0, 0, 0.5, 0.5)
+    //doodleer.drawScene(offscreenContext, [new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0),new Sprite(img2, 70, 70)])
         
     // renderLoop.deleteDrawable("loading")
     // sound1.play()
 
+    scene.addDrawable("mc", new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0),3)
+              .addDrawable("doggy", new Sprite(img2, 150, 150), 4)
+              .addDrawable("ludwig", new Sprite(img3, 50, 50), 0)
+              .addDrawable("text", new simpleText("yo what up son", 200, 200, 0.1), 0)
+              .addDrawable("text2", new simpleText("press left and right", 110, 240, -0.1, "30px Comic Sans MS", "blue"), 0)
+              .addDrawable("text3", new simpleText("and up and down", 120, 270, -0.1, "30px Comic Sans MS", "crimson"), 0)
+              .drawScene()
+    scene.addView("new", new SimpleView(100, 100, 200, 200, 0, 0, 0.5, 0.5), -1)
+              .drawScene()
     // renderLoop.addDrawable("mc", new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0),3)
               // .addDrawable("doggy", new Sprite(img2, 150, 150), 4)
               // .addDrawable("ludwig", new Sprite(img3, 50, 50), 0)
