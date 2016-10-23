@@ -4,7 +4,15 @@
 //canvas
 
 //easy to use networking support?
+//web sockets or webRTC
 
+//GOALS:
+//extensible
+//modular
+//simple to use, but with all the functionality needed
+//minimally restrictive
+
+//TODO:
 //rooms / states
 //camera with pan / zoom
 //touch input support
@@ -13,16 +21,20 @@
 //tiling
 //spritesheet animations
 //animation timelining
+//make MediaLoadPool promise based
+//wrap it up
 
 /* CURRENT ARCHITECTURE:
 Drawable
   maintains a state that is drawable to the canvas using the void draw(ctx, viewCtx) method
 View
-  maintains viewport state, drawing Drawable arrays based upon state, can pass viewContext to Drawables (i.e. 3d drawables need view context), interacting with ctx
+  maintains viewport state, draws Drawable arrays based upon state, can pass viewContext to Drawables (i.e. 3d drawables need view context), interacts with ctx,
+  has viewStart and viewEnd callbacks
 Scene
   manages Drawables and Views, controls view activation order, virtual canvas layering, sprite depth, other sprite meta information
 Loop
   manages scenes and performs scene transitions, continuous activation of scene drawing
+  NEEDS A MECHANISM FOR PRE LOADING
 */
 //With utilities Input and MediaLoadPool
 
@@ -37,7 +49,7 @@ Loop
 
 //Drawable interface
 class Drawable {
-    draw(ctx) {}
+    draw(ctx, viewCtx) {}
 }
 
 class simpleText extends Drawable {
@@ -225,7 +237,6 @@ class RenderLoop {
     }
     
     _loop() {
-        this.ctx.setTransform(0.5,0,0,0.5,100,0)
         this.onDrawStart()
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
         for (let i = 0; i < this._spriteArr.length; i++)
@@ -294,6 +305,49 @@ class RenderLoop {
         for (let i = low+1; i < this._spriteArr.length; i++) {
             this._spriteArr[i]._rl_index++
         }
+    }
+}
+//View
+//  maintains viewport state, draws Drawable arrays based upon state, can pass viewContext to Drawables (i.e. 3d drawables need view context), interacts with ctx,
+//  has viewStart and viewEnd callbacks
+class SimpleView {
+    //skewing is also possible, but not implemented in this version of view
+    //TODO: A version of View with this signature: constructor(dwidth=100, dheight=100, dx=0, dy=0, drot=0, sx=0, sy=0, zoomX=1, zoomY=1, srot=0)
+    constructor(dwidth=100, dheight=100, dx=0, dy=0, sx=0, sy=0, zoomX=1, zoomY=1) {
+        this.dwidth=dwidth|0
+        this.dheight=dheight|0
+        this.dx=dx|0
+        this.dy=dy|0
+        
+        this.sx=sx|0
+        this.sy=sy|0
+        
+        this.zoomX=+zoomX
+        this.zoomY=+zoomY
+    }
+    
+    drawScene(ctx, drawables) {
+        //TODO: if sprite outside boundaries, don't draw it, consider zoom&rotation of view and rotation of sprite
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        
+        ctx.save()
+        //perform zoom and translation
+        ctx.setTransform(this.zoomX,0,0,this.zoomY,this.dx-this.sx,this.dy-this.sy)
+
+        for (let i = 0; i < drawables.length; i++)
+            drawables[i].draw(ctx)
+        
+        ctx.restore()
+        
+        //TODO: Remove fillStyle
+        ctx.fillStyle = "maroon"
+        ctx.clearRect(this.dx, 0, ctx.canvas.width, this.dy)
+        ctx.fillStyle = "red"
+        ctx.clearRect(this.dx+this.dwidth, this.dy, ctx.canvas.width, ctx.canvas.height)
+        ctx.fillStyle = "crimson"
+        ctx.clearRect(0, this.dy+this.dheight, this.dx+this.dwidth, ctx.canvas.height)
+        ctx.fillStyle = "pink"
+        ctx.clearRect(0, 0, this.dx, this.dy+this.dheight)
     }
 }
 
@@ -519,7 +573,7 @@ class Input {
 }
 
 //TESTING:
-const renderLoop = new DebugRenderLoop(document.getElementById("canvas"))
+//const renderLoop = new DebugRenderLoop(document.getElementById("canvas"))
 
 const input = new Input(document.getElementById("canvas"))
 const pool = new MediaLoadPool()
@@ -531,50 +585,70 @@ pool.addImage('http://www.nasa.gov/centers/jpl/images/content/650602main_pia1541
 
 const sound1 = pool.addAudio('https://upload.wikimedia.org/wikipedia/en/3/33/Good_Fortune_%28PJ_Harvey_song_-_audio_sample%29.ogg') 
 
-renderLoop.addDrawable("loading", new simpleText("loading progress:", 10, 100, undefined, "30px Comic Sans MS", "crimson"), 0)
+//renderLoop.addDrawable("loading", new simpleText("loading progress:", 10, 100, undefined, "30px Comic Sans MS", "crimson"), 0)
 pool.onProgress = (a,b) => {
-    renderLoop.getDrawable("loading").text = "loading progress: " + a + "/" + b
+    //renderLoop.getDrawable("loading").text = "loading progress: " + a + "/" + b
 }
 
 pool.start()
 pool.onComplete = () => {
-    renderLoop.deleteDrawable("loading")
-    sound1.play()
-
-    renderLoop.addDrawable("mc", new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0),3)
-              .addDrawable("doggy", new Sprite(img2, 150, 150), 4)
-              .addDrawable("ludwig", new Sprite(img3, 50, 50), 0)
-              .addDrawable("text", new simpleText("yo what up son", 200, 200, 0.1), 0)
-              .addDrawable("text2", new simpleText("press left and right", 110, 240, -0.1, "30px Comic Sans MS", "blue"), 0)
-              .addDrawable("text3", new simpleText("and up and down", 120, 270, -0.1, "30px Comic Sans MS", "crimson"), 0)
-              
-    renderLoop.onDrawStart = function() {
-        if (input.checkKey('arrowleft') || input.checkKey('a')) {
-            renderLoop.getDrawable("ludwig").x -=2
-            renderLoop.getDrawable("ludwig").mirrorX = false
-        }
-        if (input.checkKey('arrowright') || input.checkKey('d')) {
-            renderLoop.getDrawable("ludwig").x +=2
-            renderLoop.getDrawable("ludwig").mirrorX = true
-        }
-        if (input.checkKey('arrowup') || input.checkKey('a')) {
-            renderLoop.getDrawable("ludwig").y -=2
-        }
-        if (input.checkKey('arrowdown') || input.checkKey('d')) {
-            renderLoop.getDrawable("ludwig").y +=2
-        }
-        if (renderLoop.getDrawable("ludwig").y > 138 && renderLoop.getDrawableDepth("ludwig") != 10)
-            renderLoop.setDrawableDepth("ludwig", 10)
-        if (renderLoop.getDrawable("ludwig").y < 138 && renderLoop.getDrawableDepth("ludwig") != 0)
-            renderLoop.setDrawableDepth("ludwig", 0)
-        
-        renderLoop.getDrawable("ludwig").rot = Math.sin(renderLoop.getDrawable("ludwig").y/5 + renderLoop.getDrawable("ludwig").x/5) / 4
-        
-        renderLoop.getDrawable("mc").height += 0.2
-    }
     
-    input.onMouse("down", (a)=>{
-        console.log(input.mousePos.x, input.mousePos.y, input.checkKey('b'))
-    }, 'left')
+    const offscreenCanvas = document.createElement("canvas");
+    offscreenCanvas.width = document.getElementById("canvas").width;
+    offscreenCanvas.height = document.getElementById("canvas").height;
+    const offscreenContext = offscreenCanvas.getContext("2d");
+    
+    const doodleer = new SimpleView(100, 100, 40, 40, 0, 0, 0.5, 0.5)
+    doodleer.drawScene(offscreenContext, [new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0),new Sprite(img2, 70, 70)])
+    
+    document.getElementById("canvas").getContext('2d').drawImage(offscreenCanvas,0,0)
+    
+    offscreenContext.clearRect(0,0,offscreenCanvas.width, offscreenCanvas.height)
+    
+    const aa = new SimpleView(100, 100, 140, 140)
+    aa.drawScene(offscreenContext, [new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0),new Sprite(img2, 70, 70)])
+    
+    document.getElementById("canvas").getContext('2d').drawImage(offscreenCanvas,0,0)
+    
+    //constructor(dwidth=100, dheight=100, dx=0, dy=0, sx=0, sy=0, zoomX=1, zoomY=1) {
+        
+    // renderLoop.deleteDrawable("loading")
+    // sound1.play()
+
+    // renderLoop.addDrawable("mc", new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0),3)
+              // .addDrawable("doggy", new Sprite(img2, 150, 150), 4)
+              // .addDrawable("ludwig", new Sprite(img3, 50, 50), 0)
+              // .addDrawable("text", new simpleText("yo what up son", 200, 200, 0.1), 0)
+              // .addDrawable("text2", new simpleText("press left and right", 110, 240, -0.1, "30px Comic Sans MS", "blue"), 0)
+              // .addDrawable("text3", new simpleText("and up and down", 120, 270, -0.1, "30px Comic Sans MS", "crimson"), 0)
+              
+    // renderLoop.onDrawStart = function() {
+        // if (input.checkKey('arrowleft') || input.checkKey('a')) {
+            // renderLoop.getDrawable("ludwig").x -=2
+            // renderLoop.getDrawable("ludwig").mirrorX = false
+        // }
+        // if (input.checkKey('arrowright') || input.checkKey('d')) {
+            // renderLoop.getDrawable("ludwig").x +=2
+            // renderLoop.getDrawable("ludwig").mirrorX = true
+        // }
+        // if (input.checkKey('arrowup') || input.checkKey('a')) {
+            // renderLoop.getDrawable("ludwig").y -=2
+        // }
+        // if (input.checkKey('arrowdown') || input.checkKey('d')) {
+            // renderLoop.getDrawable("ludwig").y +=2
+        // }
+        // if (renderLoop.getDrawable("ludwig").y > 138 && renderLoop.getDrawableDepth("ludwig") != 10)
+            // renderLoop.setDrawableDepth("ludwig", 10)
+        // if (renderLoop.getDrawable("ludwig").y < 138 && renderLoop.getDrawableDepth("ludwig") != 0)
+            // renderLoop.setDrawableDepth("ludwig", 0)
+        
+        // renderLoop.getDrawable("ludwig").rot = Math.sin(renderLoop.getDrawable("ludwig").y/5 + renderLoop.getDrawable("ludwig").x/5) / 4
+        
+        // renderLoop.getDrawable("mc").height += 0.2
+    // }
+    
+    // input.onMouse("down", (a)=>{
+        // console.log(input.mousePos.x, input.mousePos.y, input.checkKey('b'))
+    // }, 'left')
 }
 
