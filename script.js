@@ -9,41 +9,23 @@
 //GOALS:
 //extensible
 //modular
+//each piece is useful at it's place in the usage hierarchy
 //simple to use, but with all the functionality needed
 //minimally restrictive
 
 //TODO:
-//rooms / states
-//camera with pan / zoom
+//some sort of groups
+//primitive drawable (square, circle, line, polygon etc)
 //touch input support
 //only render inside the canvas / camera
-//camera order rendering
-//tiling
+//tiling drawable
 //spritesheet animations
 //animation timelining
 //make MediaLoadPool promise based
-//wrap it up
-
-/* CURRENT ARCHITECTURE:
-Drawable
-  maintains a state that is drawable to the canvas using the void draw(ctx, viewCtx) method
-View
-  maintains viewport state, draws Drawable arrays based upon state, can pass viewContext to Drawables (i.e. 3d drawables need view context), interacts with ctx,
-  has viewStart and viewEnd callbacks
-Scene
-  manages Drawables and Views, controls view activation order, virtual canvas layering, sprite depth, other sprite meta information
-Loop
-  manages scenes and performs scene transitions, continuous activation of scene drawing
-  NEEDS A MECHANISM FOR PRE LOADING
-*/
-//With utilities Input and MediaLoadPool
-
-
-//Reference:
-// 0| int
-// + float
-// !! boolean
-// +'' string
+//wrap it up into one thing
+//maybe more audio manipulation
+//view attached drawables (i.e. ui elements)
+//flesh out loop/scene manager system
 
 "use strict"
 
@@ -193,120 +175,6 @@ class SpriteSheet {
     } 
 }
 
-//IDEA: use es6 proxies to make a LazyRenderer class (useful for performance on things with a low change rate)
-//IDEA: make a ControlledRenderer class that only renders when told to
-
-
-class RenderLoop {
-    
-    constructor(canvas) {
-        if (!canvas)
-            throw new TypeError("Parametererror: canvas required!")
-        
-        this.canvas = canvas
-        if (!this.canvas.getContext)
-            throw new TypeError("Context could not be retrieved from canvas!")
-        
-        this.ctx = this.canvas.getContext('2d')
-        
-        this.onDrawStart = function() {}
-        this.onDrawEnd = function() {}
-        
-        this._spriteHash = {}
-        this._spriteArr = []
-        this._running = false
-        
-        this.start()
-    }
-    
-    start() {
-        if (!this._running) {
-            this._running = true
-            this._loop()
-        } else {
-            throw new Error("RenderLoop instance was asked to start while running")
-        }
-    }
-    
-    stop() {
-        if (this._running) {
-            this._running = false
-        } else {
-            throw new Error("RenderLoop instance was asked to stop while stopped")
-        }
-    }
-    
-    _loop() {
-        this.onDrawStart()
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
-        for (let i = 0; i < this._spriteArr.length; i++)
-            this._spriteArr[i].draw(this.ctx)
-
-        this.ctx.clearRect(this.canvas.width, 0, this.canvas.width*2, this.canvas.height*2)
-        this.onDrawEnd()
-        if (this._running)
-            window.requestAnimationFrame(this._loop.bind(this))
-    }
-    
-    addDrawable(name, drawable, depth=0) {
-        if (!name)
-            throw new TypeError("Parametererror: name required!")
-        if (!drawable)
-            throw new TypeError("Parametererror: drawable required!")
-        if (!(drawable instanceof Drawable))
-            throw new TypeError("Parametererror: drawable must be an instance of Drawable!")
-        if (this._spriteHash[name] !== undefined)
-            throw new Error("Drawable with this name already exists")
-        
-        this._spriteHash[name] = drawable
-        this._spriteHash[name]._rl_depth = depth
-        //insert into array at proper position
-        this._spliceSprite(drawable)
-        
-        return this
-    }
-    
-    getDrawable(name) {
-        return this._spriteHash[name]
-    }
-    
-    deleteDrawable(name) {
-        //remove from array
-        this._spriteArr.splice(this._spriteHash[name]._rl_index, 1)
-        //remove from hash
-        delete this._spriteHash[name]
-    }
-    
-    setDrawableDepth(name, depth=0) {
-        //remove from array
-        this._spriteArr.splice(this._spriteHash[name]._rl_index, 1)
-        this._spriteHash[name]._rl_depth = depth
-        //reinsert
-        this._spliceSprite(this._spriteHash[name])
-    }
-    
-    getDrawableDepth(name) {
-        return this._spriteHash[name]._rl_depth
-    }
-    
-    _spliceSprite(sprite) {
-        var low = 0,
-            high = this._spriteArr.length
-
-        while (low < high) {
-            var mid = (low + high) >>> 1
-            if (this._spriteArr[mid]._rl_depth < sprite._rl_depth) low = mid + 1
-            else high = mid
-        }
-        
-        sprite._rl_index = low
-        this._spriteArr.splice(low, 0, sprite)
-        //update index counter of sprites being pushed up by insertion
-        for (let i = low+1; i < this._spriteArr.length; i++) {
-            this._spriteArr[i]._rl_index++
-        }
-    }
-}
 class View {
     drawView(ctx, drawables) {}
 }
@@ -336,21 +204,16 @@ class SimpleView extends View {
         
         ctx.save()
         //perform zoom and translation
-        ctx.setTransform(this.zoomX,0,0,this.zoomY,this.dx-this.sx,this.dy-this.sy)
+        ctx.setTransform(this.zoomX,0,0,this.zoomY,(this.dx-this.sx)*this.zoomX,(this.dy-this.sy)*this.zoomY)
 
         for (let i = 0; i < drawables.length; i++)
             drawables[i].draw(ctx)
         
         ctx.restore()
         
-        //TODO: Remove fillStyle
-        ctx.fillStyle = "maroon"
         ctx.clearRect(this.dx, 0, ctx.canvas.width, this.dy)
-        ctx.fillStyle = "red"
         ctx.clearRect(this.dx+this.dwidth, this.dy, ctx.canvas.width, ctx.canvas.height)
-        ctx.fillStyle = "crimson"
         ctx.clearRect(0, this.dy+this.dheight, this.dx+this.dwidth, ctx.canvas.height)
-        ctx.fillStyle = "pink"
         ctx.clearRect(0, 0, this.dx, this.dy+this.dheight)
     }
 }
@@ -372,6 +235,8 @@ class Scene {
         this.osCanvas.height = this.canvas.height;
         this.osCtx = this.osCanvas.getContext("2d");
         
+        //this.osCtx.imageSmoothingEnabled = false
+        
         this._drawableHash = {}
         this._drawableArr = []
         
@@ -382,8 +247,9 @@ class Scene {
     }
     
     drawScene() {
+        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
         for (let i = 0; i < this._viewArr.length; i++) {
-            this.osCtx.clearRect(0, 0, this.osCtx.width, this.osCtx.height)
+            this.osCtx.clearRect(0, 0, this.osCanvas.width, this.osCanvas.height)
             this._viewArr[i].drawView(this.osCtx, this._drawableArr)
             //optimize this line:
             this.ctx.drawImage(this.osCanvas, 0, 0)
@@ -493,14 +359,61 @@ class Scene {
     }
 }
 
+//IDEA: use es6 proxies to make a LazyRenderer class (useful for performance on things with a low change rate)
+//IDEA: make a ControlledRenderer class that only renders when told to
+
+class RenderLoop {
+    
+    constructor(scene) {
+        if (!scene)
+            throw new TypeError("Parametererror: scene required!")
+        if (!(scene instanceof Scene)) 
+            throw new TypeError("ParameterError: scene must be an Scene object!")
+        
+        this.scene = scene
+        
+        this.onDrawStart = function() {}
+        this.onDrawEnd = function() {}
+        
+        this.start()
+    }
+    
+    start() {
+        if (!this._running) {
+            this._running = true
+            this._loop()
+        } else {
+            throw new Error("RenderLoop instance was asked to start while running")
+        }
+    }
+    
+    stop() {
+        if (this._running) {
+            this._running = false
+        } else {
+            throw new Error("RenderLoop instance was asked to stop while stopped")
+        }
+    }
+    
+    _loop() {
+        this.onDrawStart()
+        
+        this.scene.drawScene()
+        
+        this.onDrawEnd()
+        if (this._running)
+            window.requestAnimationFrame(this._loop.bind(this))
+    }
+}
+
 //add longest frame delay for this second
 class DebugRenderLoop extends RenderLoop {
-    constructor(canvas) {
-        super(canvas)
+    constructor(scene) {
+        super(scene)
         this._debug = {}
         this._debug.lastSecond = window.performance.now()
         this._debug.framesThisSecond = 0
-        this.addDrawable("_debug_fps", new simpleText("FPS: calculating...", 10, 10, 0), 1000)
+        this.scene.addDrawable("_debug_fps", new simpleText("FPS: calculating...", 10, 10, 0), 1000)
     }
     
     _loop() {
@@ -508,7 +421,7 @@ class DebugRenderLoop extends RenderLoop {
         if (this._debug) {
             this._debug.framesThisSecond++
             if (window.performance.now() > this._debug.lastSecond + 1000) {
-                this._spriteHash._debug_fps.text = "FPS: " + this._debug.framesThisSecond
+                this.scene._drawableHash._debug_fps.text = "FPS: " + this._debug.framesThisSecond
                 this._debug.lastSecond = window.performance.now()
                 this._debug.framesThisSecond = 0
             }
@@ -557,6 +470,7 @@ class MediaLoadPool {
         
         temp.oncanplaythrough = (function() {
             this._progress++
+            temp.oncanplaythrough = null
             if (this._progress == this._total)
                 this.onComplete()
             else
@@ -715,8 +629,9 @@ class Input {
 }
 
 //TESTING:
-//const renderLoop = new DebugRenderLoop(document.getElementById("canvas"))
 const scene = new Scene(document.getElementById("canvas"))
+scene.addView("new", new SimpleView(100, 100, 200, 200, -50, -50, 2, 2), 1)
+const renderLoop = new DebugRenderLoop(scene)
 
 const input = new Input(document.getElementById("canvas"))
 const pool = new MediaLoadPool()
@@ -724,67 +639,71 @@ const pool = new MediaLoadPool()
 const img1 = pool.addImage('http://vignette2.wikia.nocookie.net/minecraft/images/f/f0/Minecraft_Items.png/revision/latest?cb=20140102042917')
 const img2 = pool.addImage('https://tcrf.net/images/thumb/b/bf/Undertale_toby_dog.gif/50px-Undertale_toby_dog.gif')
 const img3 = pool.addImage('http://www.mariowiki.com/images/e/ee/Ludwig_Idle.gif')  
+const img4 = pool.addImage('http://opengameart.org/sites/default/files/spritesheet_caveman.png')
 pool.addImage('http://www.nasa.gov/centers/jpl/images/content/650602main_pia15415-43.jpg')
 
-const sound1 = pool.addAudio('https://upload.wikimedia.org/wikipedia/en/3/33/Good_Fortune_%28PJ_Harvey_song_-_audio_sample%29.ogg') 
+const sound1 = pool.addAudio('http://incompetech.com/music/royalty-free/mp3-royaltyfree/Inspired.mp3') 
 
-//renderLoop.addDrawable("loading", new simpleText("loading progress:", 10, 100, undefined, "30px Comic Sans MS", "crimson"), 0)
+scene.addDrawable("loading", new simpleText("loading progress:", 10, 10, undefined, "30px Comic Sans MS", "crimson"), 0)
 pool.onProgress = (a,b) => {
-    //renderLoop.getDrawable("loading").text = "loading progress: " + a + "/" + b
+    scene.getDrawable("loading").text = "loading progress: " + a + "/" + b
 }
 
 pool.start()
 pool.onComplete = () => {
-    
-    //const doodleer = new SimpleView(100, 100, 40, 40, 0, 0, 0.5, 0.5)
-    //doodleer.drawScene(offscreenContext, [new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0),new Sprite(img2, 70, 70)])
         
-    // renderLoop.deleteDrawable("loading")
-    // sound1.play()
+    scene.deleteDrawable("loading")
+    sound1.play()
+    sound1.loop = true
 
+    //add sprites to the scene 
     scene.addDrawable("mc", new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0),3)
               .addDrawable("doggy", new Sprite(img2, 150, 150), 4)
+              .addDrawable("man", new Sprite(new SpriteSheet(img4, 32, 32), 250, 150), 4)
               .addDrawable("ludwig", new Sprite(img3, 50, 50), 0)
               .addDrawable("text", new simpleText("yo what up son", 200, 200, 0.1), 0)
               .addDrawable("text2", new simpleText("press left and right", 110, 240, -0.1, "30px Comic Sans MS", "blue"), 0)
               .addDrawable("text3", new simpleText("and up and down", 120, 270, -0.1, "30px Comic Sans MS", "crimson"), 0)
-              .drawScene()
-    scene.addView("new", new SimpleView(100, 100, 200, 200, 0, 0, 0.5, 0.5), -1)
-              .drawScene()
-    // renderLoop.addDrawable("mc", new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0),3)
-              // .addDrawable("doggy", new Sprite(img2, 150, 150), 4)
-              // .addDrawable("ludwig", new Sprite(img3, 50, 50), 0)
-              // .addDrawable("text", new simpleText("yo what up son", 200, 200, 0.1), 0)
-              // .addDrawable("text2", new simpleText("press left and right", 110, 240, -0.1, "30px Comic Sans MS", "blue"), 0)
-              // .addDrawable("text3", new simpleText("and up and down", 120, 270, -0.1, "30px Comic Sans MS", "crimson"), 0)
-              
-    // renderLoop.onDrawStart = function() {
-        // if (input.checkKey('arrowleft') || input.checkKey('a')) {
-            // renderLoop.getDrawable("ludwig").x -=2
-            // renderLoop.getDrawable("ludwig").mirrorX = false
-        // }
-        // if (input.checkKey('arrowright') || input.checkKey('d')) {
-            // renderLoop.getDrawable("ludwig").x +=2
-            // renderLoop.getDrawable("ludwig").mirrorX = true
-        // }
-        // if (input.checkKey('arrowup') || input.checkKey('a')) {
-            // renderLoop.getDrawable("ludwig").y -=2
-        // }
-        // if (input.checkKey('arrowdown') || input.checkKey('d')) {
-            // renderLoop.getDrawable("ludwig").y +=2
-        // }
-        // if (renderLoop.getDrawable("ludwig").y > 138 && renderLoop.getDrawableDepth("ludwig") != 10)
-            // renderLoop.setDrawableDepth("ludwig", 10)
-        // if (renderLoop.getDrawable("ludwig").y < 138 && renderLoop.getDrawableDepth("ludwig") != 0)
-            // renderLoop.setDrawableDepth("ludwig", 0)
-        
-        // renderLoop.getDrawable("ludwig").rot = Math.sin(renderLoop.getDrawable("ludwig").y/5 + renderLoop.getDrawable("ludwig").x/5) / 4
-        
-        // renderLoop.getDrawable("mc").height += 0.2
-    // }
     
-    // input.onMouse("down", (a)=>{
-        // console.log(input.mousePos.x, input.mousePos.y, input.checkKey('b'))
-    // }, 'left')
+    let frame = 0
+    renderLoop.onDrawStart = function() {
+        frame++
+        //control ludwig
+        if (input.checkKey('arrowleft') || input.checkKey('a')) {
+            scene.getDrawable("ludwig").x -=2
+            scene.getDrawable("ludwig").mirrorX = false
+        }
+        if (input.checkKey('arrowright') || input.checkKey('d')) {
+            scene.getDrawable("ludwig").x +=2
+            scene.getDrawable("ludwig").mirrorX = true
+        }
+        if (input.checkKey('arrowup') || input.checkKey('a')) {
+            scene.getDrawable("ludwig").y -=2
+        }
+        if (input.checkKey('arrowdown') || input.checkKey('d')) {
+            scene.getDrawable("ludwig").y +=2
+        }
+        //make ludwig go in front and behind the dog
+        if (scene.getDrawable("ludwig").y > 138 && scene.getDrawableDepth("ludwig") != 10)
+            scene.setDrawableDepth("ludwig", 10)
+        if (scene.getDrawable("ludwig").y < 138 && scene.getDrawableDepth("ludwig") != 0)
+            scene.setDrawableDepth("ludwig", 0)
+        
+        //make ludwig waddle
+        scene.getDrawable("ludwig").rot = Math.sin(scene.getDrawable("ludwig").y/5 + scene.getDrawable("ludwig").x/5) / 4
+        
+        scene.getDrawable("mc").height += 0.2
+        
+        scene.getView("new").sx = scene.getDrawable("ludwig").x + 95
+        scene.getView("new").sy = scene.getDrawable("ludwig").y + 100
+        
+        scene.getDrawable("man").subimage += (frame%2)?0:1
+        
+        sound1.volume = Math.min(Math.max(1-Math.sqrt((scene.getDrawable("ludwig").x-150)**2 + (scene.getDrawable("ludwig").y-150)**2)/200, 0), 1)
+    }
+    
+    input.onMouse("down", (a)=>{
+        console.log(input.mousePos.x, input.mousePos.y, input.checkKey('b'))
+    }, 'left')
 }
 
