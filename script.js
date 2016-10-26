@@ -6,12 +6,15 @@
 //easy to use networking support?
 //web sockets or webRTC
 
+//maybe more audio manipulation
+
 //GOALS:
 //extensible
 //modular
 //each piece is useful at it's place in the usage hierarchy
 //simple to use, but with all the functionality needed
 //minimally restrictive
+//distributed complexity
 
 //TODO:
 //some sort of groups
@@ -19,13 +22,15 @@
 //touch input support
 //only render inside the canvas / camera
 //tiling drawable
+//css backgrounds on scenes
 //spritesheet animations
 //animation timelining
 //make MediaLoadPool promise based
 //wrap it up into one thing
-//maybe more audio manipulation
 //view attached drawables (i.e. ui elements)
 //flesh out loop/scene manager system
+//mouse pointer swapping
+//draw smoothing on/off
 
 "use strict"
 
@@ -35,25 +40,27 @@ class Drawable {
 }
 
 class simpleText extends Drawable {
-    constructor(text='', x=0, y=0, rot=0, font, color) {
+    constructor(text='', x=0, y=0, rot=0, font, color, opacity=1) {
         super()
         
         this.text = text+''
         this.x = x|0
         this.y = y|0
         this.rot = +rot
-        this.font = font
-        this.color = color
+        this.font = font+''
+        this.color = color+''
+        this.opacity = +opacity
     }
     
     draw(ctx) {
         ctx.save()
-        
+        ctx.globalAlpha = this.opacity
         if (this.font)
             ctx.font = this.font
         if (this.color)
             ctx.fillStyle = this.color
         ctx.textBaseline = "top"
+        
         const {width} = ctx.measureText(this.text)
         const centerOffsetWidth = this.x|0
         const centerOffsetHeight = this.y|0
@@ -68,7 +75,7 @@ class simpleText extends Drawable {
 } 
 
 class Sprite extends Drawable {
-    constructor(image, x=0, y=0, rot=0, width=0, height=0, subimage=0, mirrorX=false, mirrorY=false) {
+    constructor(image, x=0, y=0, rot=0, width=0, height=0, subimage=0, mirrorX=false, mirrorY=false, opacity=1) {
         super()
         if (image instanceof Image) {
             if (image.naturalHeight == 0)
@@ -83,6 +90,7 @@ class Sprite extends Drawable {
                 const centerOffsetHeight = this.y+this.height/2|0
                 
                 ctx.save()
+                ctx.globalAlpha = this.opacity
                 ctx.translate(centerOffsetWidth, centerOffsetHeight)
                 ctx.rotate(this.rot)
                 if (this.mirrorX && this.mirrorY) 
@@ -107,7 +115,7 @@ class Sprite extends Drawable {
                 const centerOffsetHeight = this.y+this.height/2|0
                 
                 ctx.save()
-                
+                ctx.globalAlpha = this.opacity
                 ctx.translate(centerOffsetWidth, centerOffsetHeight)
                 ctx.rotate(this.rot)
                 if (this.mirrorX && this.mirrorY) 
@@ -139,6 +147,7 @@ class Sprite extends Drawable {
         this.rot = +rot
         this.mirrorX = !!mirrorX
         this.mirrorY = !!mirrorY
+        this.opacity = +opacity
     }
 }
 
@@ -657,7 +666,7 @@ pool.onComplete = () => {
     sound1.loop = true
 
     //add sprites to the scene 
-    scene.addDrawable("mc", new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0),3)
+    scene.addDrawable("mc", new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0, false, false, 0.4),3)
               .addDrawable("doggy", new Sprite(img2, 150, 150), 4)
               .addDrawable("man", new Sprite(new SpriteSheet(img4, 32, 32), 250, 150), 4)
               .addDrawable("ludwig", new Sprite(img3, 50, 50), 0)
@@ -706,4 +715,3 @@ pool.onComplete = () => {
         console.log(input.mousePos.x, input.mousePos.y, input.checkKey('b'))
     }, 'left')
 }
-
