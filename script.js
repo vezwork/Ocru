@@ -29,8 +29,9 @@
 //wrap it up into one thing
 //view attached drawables (i.e. ui elements)
 //flesh out loop/scene manager system
-//mouse pointer swapping
+//mouse cursor swapping
 //draw smoothing on/off
+//framerate capping/locking
 
 "use strict"
 
@@ -281,6 +282,18 @@ class Scene {
         //insert into array at proper position
         this._spliceIntoOrder(view, this._viewArr)
         
+        //add depth setter and getter to view for ease of use
+        Object.defineProperty(view, 'depth', {
+            get: function() { 
+                return this._rl_depth
+            },
+            set: (function(newValue) {
+                this.setViewDepth(name, newValue)
+            }).bind(this),
+            enumerable: true,
+            configurable: true
+        })
+        
         return this
     }
     
@@ -291,8 +304,12 @@ class Scene {
     deleteView(name) {
         //remove from array
         this._viewArr.splice(this._viewHash[name]._rl_index, 1)
-        //remove from hash
+        //clean and remove from hash
+        delete this._viewHash[name].depth
+        delete this._viewHash[name]._rl_depth
+        delete this._viewHash[name]._rl_index
         delete this._viewHash[name]
+        
     }
     
     setViewDepth(name, depth=0) {
@@ -323,6 +340,18 @@ class Scene {
         //insert into array at proper position
         this._spliceIntoOrder(drawable, this._drawableArr)
         
+        //add depth setter and getter to drawable for ease of use
+        Object.defineProperty(drawable, 'depth', {
+            get: function() { 
+                return this._rl_depth
+            },
+            set: (function(newValue) {
+                this.setDrawableDepth(name, newValue)
+            }).bind(this),
+            enumerable: true,
+            configurable: true
+        })
+
         return this
     }
     
@@ -333,7 +362,10 @@ class Scene {
     deleteDrawable(name) {
         //remove from array
         this._drawableArr.splice(this._drawableHash[name]._rl_index, 1)
-        //remove from hash
+        //clean and remove from hash
+        delete this._drawableHash[name].depth
+        delete this._drawableHash[name]._rl_depth
+        delete this._drawableHash[name]._rl_index
         delete this._drawableHash[name]
     }
     
@@ -675,38 +707,39 @@ pool.onComplete = () => {
               .addDrawable("text3", new simpleText("and up and down", 120, 270, -0.1, "30px Comic Sans MS", "crimson"), 0)
     
     let frame = 0
+    let ludwig = scene.getDrawable("ludwig")
     renderLoop.onDrawStart = function() {
         frame++
         //control ludwig
         if (input.checkKey('arrowleft') || input.checkKey('a')) {
-            scene.getDrawable("ludwig").x -=2
-            scene.getDrawable("ludwig").mirrorX = false
+            ludwig.x -=2
+            ludwig.mirrorX = false
         }
         if (input.checkKey('arrowright') || input.checkKey('d')) {
-            scene.getDrawable("ludwig").x +=2
-            scene.getDrawable("ludwig").mirrorX = true
+            ludwig.x +=2
+            ludwig.mirrorX = true
         }
         if (input.checkKey('arrowup') || input.checkKey('a')) {
-            scene.getDrawable("ludwig").y -=2
+            ludwig.y -=2
         }
         if (input.checkKey('arrowdown') || input.checkKey('d')) {
-            scene.getDrawable("ludwig").y +=2
+            ludwig.y +=2
         }
         //make ludwig go in front and behind the dog
-        if (scene.getDrawable("ludwig").y > 138 && scene.getDrawableDepth("ludwig") != 10)
-            scene.setDrawableDepth("ludwig", 10)
-        if (scene.getDrawable("ludwig").y < 138 && scene.getDrawableDepth("ludwig") != 0)
-            scene.setDrawableDepth("ludwig", 0)
+        if (ludwig.y > 138 && ludwig.depth != 10)
+            ludwig.depth = 10
+        if (ludwig.y < 138 && ludwig.depth != 0)
+            ludwig.depth = 0
         
         //make ludwig waddle
-        scene.getDrawable("ludwig").rot = Math.sin(scene.getDrawable("ludwig").y/5 + scene.getDrawable("ludwig").x/5) / 4
+        ludwig.rot = Math.sin(ludwig.y/5 + ludwig.x/5) / 4
         
         scene.getDrawable("mc").height += 0.2
         
-        scene.getView("new").sx = scene.getDrawable("ludwig").x + 95
-        scene.getView("new").sy = scene.getDrawable("ludwig").y + 100
+        scene.getView("new").sx = ludwig.x + 95
+        scene.getView("new").sy = ludwig.y + 100
         
-        scene.getDrawable("man").subimage += (frame%2)?0:1
+        scene.getDrawable("man").subimage += (frame%4)?0:1
         
         sound1.volume = Math.min(Math.max(1-Math.sqrt((scene.getDrawable("ludwig").x-150)**2 + (scene.getDrawable("ludwig").y-150)**2)/200, 0), 1)
     }
