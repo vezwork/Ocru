@@ -17,21 +17,26 @@
 //distributed complexity
 
 //TODO:
-//some sort of groups
-//primitive drawable (square, circle, line, polygon etc)
-//touch input support
-//only render inside the canvas / camera
-//tiling drawable
-//css backgrounds on scenes
-//spritesheet animations
-//animation timelining
-//make MediaLoadPool promise based
-//wrap it up into one thing
-//view attached drawables (i.e. ui elements)
-//flesh out loop/scene manager system
-//mouse cursor swapping
-//draw smoothing on/off
-//framerate capping/locking
+    //FUTURE:
+    //some sort of groups
+    //tiling sprite drawable
+    //css backgrounds on scenes maybe
+    //spritesheet animations
+    //animation timelining
+    //view attached drawables (ui elements)
+    //make MediaLoadPool promise based
+
+    //HIGH PRIORITY OVERARCHING:
+    //flesh out loop/scene manager system //wrap it up into one thing
+    //framerate capping/locking
+
+    //DOABLE:
+    //touch input support
+    //view blend modes
+    //mouse cursor swapping i.e. INPUT.setCursor(img)
+    //draw smoothing on/off i.e. VIEW.smooth
+    //only render inside the canvas / camera i.e. using DRAWABLE.MAX SIZE GET
+    //primitive drawable i.e. (square, circle, line, polygon etc)
 
 "use strict"
 
@@ -214,7 +219,7 @@ class SimpleView extends View {
         
         ctx.save()
         //perform zoom and translation
-        ctx.setTransform(this.zoomX,0,0,this.zoomY,(this.dx-this.sx)*this.zoomX,(this.dy-this.sy)*this.zoomY)
+        ctx.setTransform(this.zoomX,0,0,this.zoomY,(this.dx-this.sx)*this.zoomX-this.dx|0,(this.dy-this.sy)*this.zoomY-this.dy|0)
 
         for (let i = 0; i < drawables.length; i++)
             drawables[i].draw(ctx)
@@ -736,8 +741,8 @@ pool.onComplete = () => {
         
         scene.getDrawable("mc").height += 0.2
         
-        scene.getView("new").sx = ludwig.x + 95
-        scene.getView("new").sy = ludwig.y + 100
+        scene.getView("new").sx = ludwig.x - 5
+        scene.getView("new").sy = ludwig.y
         
         scene.getDrawable("man").subimage += (frame%4)?0:1
         
