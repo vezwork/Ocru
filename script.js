@@ -17,6 +17,10 @@
 //distributed complexity
 
 //TODO:
+    //MACRO:
+    //unit testing
+    //babel + uglify es5 builds
+    
     //FUTURE:
     //some sort of groups
     //tiling sprite drawable
@@ -25,13 +29,16 @@
     //animation timelining
     //view attached drawables (ui elements)
     //make MediaLoadPool promise based
+    //preload scenes
 
     //HIGH PRIORITY OVERARCHING:
     //flesh out loop/scene manager system //wrap it up into one thing
     //framerate capping/locking
 
     //DOABLE:
+    //scene background color i.e. custom clear color
     //touch input support
+    //tilt input
     //view blend modes
     //mouse cursor swapping i.e. INPUT.setCursor(img)
     //draw smoothing on/off i.e. VIEW.smooth
