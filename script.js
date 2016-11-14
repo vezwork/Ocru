@@ -254,6 +254,7 @@ class SceneManager {
             throw new TypeError("Parametererror: scene required!")
         
         this.scene = scene
+        scene.play()
         
         if (!this._running) {
             this._running = true
@@ -262,6 +263,8 @@ class SceneManager {
     }
     
     stop() {
+        scene.stop()
+        
         this._running = false
     }
     
@@ -292,6 +295,14 @@ class Scene {
         
         this._viewHash = {}
         this._viewArr = []
+        
+        //main hooks
+        this.play = hooks.play
+        
+        this.renderStart = hooks.renderStart || hooks.render
+        this.renderEnd = hooks.renderEnd
+        
+        this.stop = hooks.stop
         
         this.addView(new SimpleView(this._osCanvas.width, this._osCanvas.height))
     }
@@ -524,8 +535,8 @@ class MediaLoadPool {
     
     constructor() {
         
-        this._total = 0
-        this._progress = 0
+        this.total = 0
+        this.progress = 0
 
         this._loadArr = []
         
@@ -534,16 +545,16 @@ class MediaLoadPool {
     }
     
     addImage(src) {
-        this._total++
+        this.total++
         const temp = new Image()
         this._loadArr.push({obj: temp, src: src})
         
         temp.onload = (function() {
-            this._progress++
-            if (this._progress == this._total)
+            this.progress++
+            if (this.progress == this.total)
                 this.onComplete()
             else
-                this.onProgress(this._progress, this._total)
+                this.onProgress(this.progress, this.total)
         }).bind(this)
         
         temp.onerror = function() {
@@ -554,18 +565,18 @@ class MediaLoadPool {
     }
     
     addAudio(src) {
-        this._total++
+        this.total++
         const temp = new Audio()
         temp.preload = 'auto'
         this._loadArr.push({obj: temp, src: src})
         
         temp.oncanplaythrough = (function() {
-            this._progress++
+            this.progress++
             temp.oncanplaythrough = null
-            if (this._progress == this._total)
+            if (this.progress == this.total)
                 this.onComplete()
             else
-                this.onProgress(this._progress, this._total)
+                this.onProgress(this.progress, this.total)
         }).bind(this)
         
         temp.onerror = function() {
@@ -720,52 +731,71 @@ class Input {
 }
 
 //TESTING:
-const scene = new Scene({}, 400, 400)
-
-const view_other = scene.addView(new SimpleView(100, 100, 200, 200, -50, -50, 2, 2), 1)
 
 //const renderLoop = new DebugRenderLoop(scene, document.getElementById("canvas").getContext("2d"))
 const sm = new SceneManager(document.getElementById("canvas"))
-
-
 const input = new Input(document.getElementById("canvas"))
-const pool = new MediaLoadPool()
 
-const img1 = pool.addImage('http://vignette2.wikia.nocookie.net/minecraft/images/f/f0/Minecraft_Items.png/revision/latest?cb=20140102042917')
-const img2 = pool.addImage('https://tcrf.net/images/thumb/b/bf/Undertale_toby_dog.gif/50px-Undertale_toby_dog.gif')
-const img3 = pool.addImage('http://www.mariowiki.com/images/e/ee/Ludwig_Idle.gif')  
-const img4 = pool.addImage('http://opengameart.org/sites/default/files/spritesheet_caveman.png')
-pool.addImage('http://www.nasa.gov/centers/jpl/images/content/650602main_pia15415-43.jpg')
+var img1, img2, img3, img4, img5, sound1
 
-const sound1 = pool.addAudio('http://incompetech.com/music/royalty-free/mp3-royaltyfree/Inspired.mp3') 
-
-const text_loading = scene.addDrawable(new simpleText("loading progress:", 10, 10, undefined, "30px Comic Sans MS", "crimson"), 0)
-pool.onProgress = (a,b) => {
-    text_loading.text = "loading progress: " + a + "/" + b
-}
-
-sm.play(scene)
-
-pool.start()
-pool.onComplete = () => {
+const scene_loading = new Scene({
+    
+    play: function() {
+        this.text_loading = this.addDrawable(new simpleText("loading progress:", 10, 10, undefined, "30px Comic Sans MS", "crimson"), 0)
         
-    text_loading.remove()
-    sound1.play()
-    sound1.loop = true
+        this.pool = new MediaLoadPool()
+        
+        img1 = this.pool.addImage('http://vignette2.wikia.nocookie.net/minecraft/images/f/f0/Minecraft_Items.png/revision/latest?cb=20140102042917')
+        img2 = this.pool.addImage('https://tcrf.net/images/thumb/b/bf/Undertale_toby_dog.gif/50px-Undertale_toby_dog.gif')
+        img3 = this.pool.addImage('http://www.mariowiki.com/images/e/ee/Ludwig_Idle.gif')  
+        img4 = this.pool.addImage('http://opengameart.org/sites/default/files/spritesheet_caveman.png')
+        img5 = this.pool.addImage('http://www.nasa.gov/centers/jpl/images/content/650602main_pia15415-43.jpg')
 
-    //add sprites to the scene 
-    let mc = scene.addDrawable(new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0, false, false, 0.4),3)
-    let man = scene.addDrawable(new Sprite(new SpriteSheet(img4, 32, 32), 250, 150), 4)
-    let ludwig = scene.addDrawable(new Sprite(img3, 50, 50), 0)
+        sound1 = this.pool.addAudio('http://incompetech.com/music/royalty-free/mp3-royaltyfree/Inspired.mp3') 
+        
+        this.pool.start()
+        console.log
+    },
     
-    scene.addDrawable(new Sprite(img2, 150, 150), 4)
+    render: function() {
+        this.text_loading.text = "loading progress: " + this.pool.progress + "/" + this.pool.total
+        console.log(this.pool.progress, this.pool.total)
+        if (this.pool.progress === this.pool.total)
+            sm.play(scene_main)
+    }
     
-    scene.addDrawable(new simpleText("yo what up son", 200, 200, 0.1), 0)
-    scene.addDrawable(new simpleText("press left and right", 110, 240, -0.1, "30px Comic Sans MS", "blue"), 0)
-    scene.addDrawable(new simpleText("and up and down", 120, 270, -0.1, "30px Comic Sans MS", "crimson"), 0)
+}, 400, 400)
+
+
+
+var mc, man, ludwig, view_other
+let frame = 0
+
+const scene_main = new Scene({
     
-    let frame = 0
-    renderLoop.onDrawStart = function() {
+    play: function() {
+        view_other = this.addView(new SimpleView(100, 100, 200, 200, -50, -50, 2, 2), 1)
+        
+        sound1.play()
+        sound1.loop = true
+        
+        mc = this.addDrawable(new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0, false, false, 0.4),3)
+        man = this.addDrawable(new Sprite(new SpriteSheet(img4, 32, 32), 250, 150), 4)
+        ludwig = this.addDrawable(new Sprite(img3, 50, 50), 0)
+        
+        this.addDrawable(new Sprite(img2, 150, 150), 4)
+    
+        this.addDrawable(new simpleText("yo what up son", 200, 200, 0.1), 0)
+        this.addDrawable(new simpleText("press left and right", 110, 240, -0.1, "30px Comic Sans MS", "blue"), 0)
+        this.addDrawable(new simpleText("and up and down", 120, 270, -0.1, "30px Comic Sans MS", "crimson"), 0)
+        
+        input.onMouse("down", (a)=>{
+            mc.x = input.mousePos.x - 32
+            mc.y = input.mousePos.y + 32 - mc.height/2
+        }, 'left')
+    },
+    
+    render: function() {
         frame++
         //control ludwig
         if (input.checkKey('arrowleft') || input.checkKey('a')) {
@@ -801,8 +831,6 @@ pool.onComplete = () => {
         sound1.volume = Math.min(Math.max(1-Math.sqrt((ludwig.x-150)**2 + (ludwig.y-150)**2)/200, 0), 1)
     }
     
-    input.onMouse("down", (a)=>{
-        mc.x = input.mousePos.x - 32
-        mc.y = input.mousePos.y + 32 - mc.height/2
-    }, 'left')
-}
+}, 400, 400)
+
+sm.play(scene_loading)
