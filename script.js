@@ -246,15 +246,31 @@ class SceneManager {
             throw new TypeError("Parametererror: canvas required!")
         
         this.canvas = canvas
-        
-        
+        this.ctxt = canvas.getContext("2d")
     }
     
-    preloadScene(scene) {
+    play(scene) {
+        if (!scene)
+            throw new TypeError("Parametererror: scene required!")
         
+        this.scene = scene
+        
+        if (!this._running) {
+            this._running = true
+            this._loop()
+        } 
     }
     
-    playScene() {}
+    stop() {
+        this._running = false
+    }
+    
+    _loop() {
+        this.scene.drawScene(this.ctxt)
+        
+        if (this._running)
+            window.requestAnimationFrame(this._loop.bind(this))
+    }
 }
 
 //Scene
@@ -277,22 +293,6 @@ class Scene {
         this._viewHash = {}
         this._viewArr = []
         
-        //all external hooks
-        //loading hooks
-        this.init = hooks.init
-        this.irenderstart = hooks.irender
-        this.irenderstart = hooks.irenderstart
-        this.irenderend = hooks.irenderend
-        
-        //should return a promise (be async)
-        this.load = hooks.load
-        //main hooks
-        this.create = hooks.create
-        this.renderstart = hooks.render
-        this.renderstart = hooks.renderstart
-        this.renderend = hooks.renderend
-        this.finish
-        
         this.addView(new SimpleView(this._osCanvas.width, this._osCanvas.height))
     }
     
@@ -302,6 +302,9 @@ class Scene {
     }
     
     drawScene(ctx) {
+        if (this.renderStart)
+            this.renderStart()
+        
         ctx.clearRect(0, 0, this._osCanvas.width, this._osCanvas.height)
         for (let i = 0; i < this._viewArr.length; i++) {
             this._osCtx.clearRect(0, 0, this._osCanvas.width, this._osCanvas.height)
@@ -309,6 +312,9 @@ class Scene {
             //potential optimization on this line:
             ctx.drawImage(this._osCanvas, 0, 0)
         }
+        
+        if (this.renderEnd)
+            this.renderEnd()
     }
     
     //view actions
@@ -718,7 +724,9 @@ const scene = new Scene({}, 400, 400)
 
 const view_other = scene.addView(new SimpleView(100, 100, 200, 200, -50, -50, 2, 2), 1)
 
-const renderLoop = new DebugRenderLoop(scene, document.getElementById("canvas").getContext("2d"))
+//const renderLoop = new DebugRenderLoop(scene, document.getElementById("canvas").getContext("2d"))
+const sm = new SceneManager(document.getElementById("canvas"))
+
 
 const input = new Input(document.getElementById("canvas"))
 const pool = new MediaLoadPool()
@@ -735,6 +743,8 @@ const text_loading = scene.addDrawable(new simpleText("loading progress:", 10, 1
 pool.onProgress = (a,b) => {
     text_loading.text = "loading progress: " + a + "/" + b
 }
+
+sm.play(scene)
 
 pool.start()
 pool.onComplete = () => {
