@@ -239,23 +239,35 @@ class SimpleView extends View {
         ctx.clearRect(0, 0, this.dx, this.dy+this.dheight)
     }
 }
-//Scene
-//  manages Drawables and Views, controls view activation order, virtual canvas layering, sprite depth, other sprite meta information, has one default view
-class Scene {
+
+class SceneManager {
     constructor(canvas) {
         if (!canvas)
             throw new TypeError("Parametererror: canvas required!")
         
         this.canvas = canvas
-        if (!this.canvas.getContext)
-            throw new TypeError("Context could not be retrieved from canvas!")
         
-        this.ctx = this.canvas.getContext('2d')
         
-        this.osCanvas = document.createElement("canvas");
-        this.osCanvas.width = this.canvas.width;
-        this.osCanvas.height = this.canvas.height;
-        this.osCtx = this.osCanvas.getContext("2d");
+    }
+    
+    preloadScene(scene) {
+        
+    }
+    
+    playScene() {}
+}
+
+//Scene
+//  manages Drawables and Views, controls view activation order, virtual canvas layering, sprite depth, other sprite meta information, has one default view
+class Scene {
+    constructor(hooks, width, height) {
+        if (!hooks)
+            throw new TypeError("Parametererror: hooks required!")
+        
+        this._osCanvas = document.createElement("canvas")
+        this._osCanvas.width = width || 100
+        this._osCanvas.height = height || 100
+        this._osCtx = this._osCanvas.getContext("2d")
         
         //this.osCtx.imageSmoothingEnabled = false
         
@@ -265,34 +277,55 @@ class Scene {
         this._viewHash = {}
         this._viewArr = []
         
-        this.addView("default", new SimpleView(this.canvas.width, this.canvas.height))
+        //all external hooks
+        //loading hooks
+        this.init = hooks.init
+        this.irenderstart = hooks.irender
+        this.irenderstart = hooks.irenderstart
+        this.irenderend = hooks.irenderend
+        
+        //should return a promise (be async)
+        this.load = hooks.load
+        //main hooks
+        this.create = hooks.create
+        this.renderstart = hooks.render
+        this.renderstart = hooks.renderstart
+        this.renderend = hooks.renderend
+        this.finish
+        
+        this.addView(new SimpleView(this._osCanvas.width, this._osCanvas.height))
     }
     
-    drawScene() {
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height)
+    setSize(width, height) {
+        this._osCanvas.width = width || 100
+        this._osCanvas.height = height || 100
+    }
+    
+    drawScene(ctx) {
+        ctx.clearRect(0, 0, this._osCanvas.width, this._osCanvas.height)
         for (let i = 0; i < this._viewArr.length; i++) {
-            this.osCtx.clearRect(0, 0, this.osCanvas.width, this.osCanvas.height)
-            this._viewArr[i].drawView(this.osCtx, this._drawableArr)
-            //optimize this line:
-            this.ctx.drawImage(this.osCanvas, 0, 0)
+            this._osCtx.clearRect(0, 0, this._osCanvas.width, this._osCanvas.height)
+            this._viewArr[i].drawView(this._osCtx, this._drawableArr)
+            //potential optimization on this line:
+            ctx.drawImage(this._osCanvas, 0, 0)
         }
     }
     
     //view actions
-    addView(name, view, depth=0) {
-        if (!name)
-            throw new TypeError("Parametererror: name required!")
+    addView(view, depth=0) {
         if (!view)
             throw new TypeError("Parametererror: view required!")
         if (!(view instanceof View))
             throw new TypeError("Parametererror: view must be an instance of View!")
-        if (this._viewHash[name] !== undefined)
-            throw new Error("View with this name already exists")
         
-        this._viewHash[name] = view
-        this._viewHash[name]._rl_depth = depth
+        view._rl_depth = depth
         //insert into array at proper position
         this._spliceIntoOrder(view, this._viewArr)
+        
+        //add the ability to delete this view
+        view.remove = (function() {
+            this.removeView(view)
+        }).bind(this)
         
         //add depth setter and getter to view for ease of use
         Object.defineProperty(view, 'depth', {
@@ -300,57 +333,54 @@ class Scene {
                 return this._rl_depth
             },
             set: (function(newValue) {
-                this.setViewDepth(name, newValue)
+                this.setViewDepth(view, newValue)
             }).bind(this),
             enumerable: true,
             configurable: true
         })
         
-        return this
-    }
-    
-    getView(name) {
-        return this._viewHash[name]
-    }
-    
-    deleteView(name) {
-        //remove from array
-        this._viewArr.splice(this._viewHash[name]._rl_index, 1)
-        //clean and remove from hash
-        delete this._viewHash[name].depth
-        delete this._viewHash[name]._rl_depth
-        delete this._viewHash[name]._rl_index
-        delete this._viewHash[name]
         
+        
+        return view
     }
     
-    setViewDepth(name, depth=0) {
+    removeView(view) {
         //remove from array
-        this._viewArr.splice(this._viewHash[name]._rl_index, 1)
-        this._viewHash[name]._rl_depth = depth
+        this._viewArr.splice(view._rl_index, 1)
+        //clean and remove from hash
+        delete view.depth
+        delete view.remove
+        delete view._rl_depth
+        delete view._rl_index
+    }
+    
+    setViewDepth(depth=0) {
+        //remove from array
+        this._viewArr.splice(view._rl_index, 1)
+        view._rl_depth = depth
         //reinsert
-        this._spliceIntoOrder(this._viewHash[name], this._viewArr)
+        this._spliceIntoOrder(view, this._viewArr)
     }
     
     getViewDepth(name) {
-        return this._viewHash[name]._rl_depth
+        return view._rl_depth
     }
     
     //drawable actions
-    addDrawable(name, drawable, depth=0) {
-        if (!name)
-            throw new TypeError("Parametererror: name required!")
+    addDrawable(drawable, depth=0) {
         if (!drawable)
             throw new TypeError("Parametererror: drawable required!")
         if (!(drawable instanceof Drawable))
             throw new TypeError("Parametererror: drawable must be an instance of Drawable!")
-        if (this._drawableHash[name] !== undefined)
-            throw new Error("Drawable with this name already exists")
         
-        this._drawableHash[name] = drawable
-        this._drawableHash[name]._rl_depth = depth
+        drawable._rl_depth = depth
         //insert into array at proper position
         this._spliceIntoOrder(drawable, this._drawableArr)
+        
+        //add the ability to delete this drawable
+        drawable.remove = (function() {
+            this.removeDrawable(drawable)
+        }).bind(this)
         
         //add depth setter and getter to drawable for ease of use
         Object.defineProperty(drawable, 'depth', {
@@ -358,39 +388,35 @@ class Scene {
                 return this._rl_depth
             },
             set: (function(newValue) {
-                this.setDrawableDepth(name, newValue)
+                this.setDrawableDepth(drawable, newValue)
             }).bind(this),
             enumerable: true,
             configurable: true
         })
 
-        return this
+        return drawable
     }
     
-    getDrawable(name) {
-        return this._drawableHash[name]
-    }
-    
-    deleteDrawable(name) {
+    removeDrawable(drawable) {
         //remove from array
-        this._drawableArr.splice(this._drawableHash[name]._rl_index, 1)
+        this._drawableArr.splice(drawable._rl_index, 1)
         //clean and remove from hash
-        delete this._drawableHash[name].depth
-        delete this._drawableHash[name]._rl_depth
-        delete this._drawableHash[name]._rl_index
-        delete this._drawableHash[name]
+        delete drawable.depth
+        delete drawable.remove
+        delete drawable._rl_depth
+        delete drawable._rl_index
     }
     
-    setDrawableDepth(name, depth=0) {
+    setDrawableDepth(drawable, depth=0) {
         //remove from array
-        this._drawableArr.splice(this._drawableHash[name]._rl_index, 1)
-        this._drawableHash[name]._rl_depth = depth
+        this._drawableArr.splice(drawable._rl_index, 1)
+        drawable._rl_depth = depth
         //reinsert
-        this._spliceIntoOrder(this._drawableHash[name], this._drawableArr)
+        this._spliceIntoOrder(drawable, this._drawableArr)
     }
     
     getDrawableDepth(name) {
-        return this._drawableHash[name]._rl_depth
+        return drawable._rl_depth
     }
     
     _spliceIntoOrder(object, arr) {
@@ -417,13 +443,19 @@ class Scene {
 
 class RenderLoop {
     
-    constructor(scene) {
+    constructor(scene, ctxt) {
         if (!scene)
             throw new TypeError("Parametererror: scene required!")
         if (!(scene instanceof Scene)) 
             throw new TypeError("ParameterError: scene must be an Scene object!")
         
+        if (!ctxt)
+            throw new TypeError("Parametererror: ctxt required!")
+        if (!(ctxt instanceof CanvasRenderingContext2D)) 
+            throw new TypeError("ParameterError: ctxt must be an CanvasRenderingContext2D object!")
+        
         this.scene = scene
+        this.ctxt = ctxt
         
         this.onDrawStart = function() {}
         this.onDrawEnd = function() {}
@@ -451,7 +483,7 @@ class RenderLoop {
     _loop() {
         this.onDrawStart()
         
-        this.scene.drawScene()
+        this.scene.drawScene(this.ctxt)
         
         this.onDrawEnd()
         if (this._running)
@@ -461,12 +493,12 @@ class RenderLoop {
 
 //add longest frame delay for this second
 class DebugRenderLoop extends RenderLoop {
-    constructor(scene) {
-        super(scene)
+    constructor(scene, ctxt) {
+        super(scene, ctxt)
         this._debug = {}
         this._debug.lastSecond = window.performance.now()
         this._debug.framesThisSecond = 0
-        this.scene.addDrawable("_debug_fps", new simpleText("FPS: calculating...", 10, 10, 0), 1000)
+        this._debug.text = this.scene.addDrawable(new simpleText("FPS: calculating...", 10, 10, 0), 1000)
     }
     
     _loop() {
@@ -474,7 +506,7 @@ class DebugRenderLoop extends RenderLoop {
         if (this._debug) {
             this._debug.framesThisSecond++
             if (window.performance.now() > this._debug.lastSecond + 1000) {
-                this.scene._drawableHash._debug_fps.text = "FPS: " + this._debug.framesThisSecond
+                this._debug.text.text = "FPS: " + this._debug.framesThisSecond
                 this._debug.lastSecond = window.performance.now()
                 this._debug.framesThisSecond = 0
             }
@@ -682,9 +714,11 @@ class Input {
 }
 
 //TESTING:
-const scene = new Scene(document.getElementById("canvas"))
-scene.addView("new", new SimpleView(100, 100, 200, 200, -50, -50, 2, 2), 1)
-const renderLoop = new DebugRenderLoop(scene)
+const scene = new Scene({}, 400, 400)
+
+const view_other = scene.addView(new SimpleView(100, 100, 200, 200, -50, -50, 2, 2), 1)
+
+const renderLoop = new DebugRenderLoop(scene, document.getElementById("canvas").getContext("2d"))
 
 const input = new Input(document.getElementById("canvas"))
 const pool = new MediaLoadPool()
@@ -697,29 +731,30 @@ pool.addImage('http://www.nasa.gov/centers/jpl/images/content/650602main_pia1541
 
 const sound1 = pool.addAudio('http://incompetech.com/music/royalty-free/mp3-royaltyfree/Inspired.mp3') 
 
-scene.addDrawable("loading", new simpleText("loading progress:", 10, 10, undefined, "30px Comic Sans MS", "crimson"), 0)
+const text_loading = scene.addDrawable(new simpleText("loading progress:", 10, 10, undefined, "30px Comic Sans MS", "crimson"), 0)
 pool.onProgress = (a,b) => {
-    scene.getDrawable("loading").text = "loading progress: " + a + "/" + b
+    text_loading.text = "loading progress: " + a + "/" + b
 }
 
 pool.start()
 pool.onComplete = () => {
         
-    scene.deleteDrawable("loading")
+    text_loading.remove()
     sound1.play()
     sound1.loop = true
 
     //add sprites to the scene 
-    scene.addDrawable("mc", new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0, false, false, 0.4),3)
-              .addDrawable("doggy", new Sprite(img2, 150, 150), 4)
-              .addDrawable("man", new Sprite(new SpriteSheet(img4, 32, 32), 250, 150), 4)
-              .addDrawable("ludwig", new Sprite(img3, 50, 50), 0)
-              .addDrawable("text", new simpleText("yo what up son", 200, 200, 0.1), 0)
-              .addDrawable("text2", new simpleText("press left and right", 110, 240, -0.1, "30px Comic Sans MS", "blue"), 0)
-              .addDrawable("text3", new simpleText("and up and down", 120, 270, -0.1, "30px Comic Sans MS", "crimson"), 0)
+    let mc = scene.addDrawable(new Sprite(new SpriteSheet(img1, 16, 16), 32, 32, 0, 64, 64, 0, false, false, 0.4),3)
+    let man = scene.addDrawable(new Sprite(new SpriteSheet(img4, 32, 32), 250, 150), 4)
+    let ludwig = scene.addDrawable(new Sprite(img3, 50, 50), 0)
+    
+    scene.addDrawable(new Sprite(img2, 150, 150), 4)
+    
+    scene.addDrawable(new simpleText("yo what up son", 200, 200, 0.1), 0)
+    scene.addDrawable(new simpleText("press left and right", 110, 240, -0.1, "30px Comic Sans MS", "blue"), 0)
+    scene.addDrawable(new simpleText("and up and down", 120, 270, -0.1, "30px Comic Sans MS", "crimson"), 0)
     
     let frame = 0
-    let ludwig = scene.getDrawable("ludwig")
     renderLoop.onDrawStart = function() {
         frame++
         //control ludwig
@@ -746,17 +781,18 @@ pool.onComplete = () => {
         //make ludwig waddle
         ludwig.rot = Math.sin(ludwig.y/5 + ludwig.x/5) / 4
         
-        scene.getDrawable("mc").height += 0.2
+        mc.height += 0.2
         
-        scene.getView("new").sx = ludwig.x - 5
-        scene.getView("new").sy = ludwig.y
+        view_other.sx = ludwig.x - 5
+        view_other.sy = ludwig.y
         
-        scene.getDrawable("man").subimage += (frame%4)?0:1
+        man.subimage += (frame%4)?0:1
         
-        sound1.volume = Math.min(Math.max(1-Math.sqrt((scene.getDrawable("ludwig").x-150)**2 + (scene.getDrawable("ludwig").y-150)**2)/200, 0), 1)
+        sound1.volume = Math.min(Math.max(1-Math.sqrt((ludwig.x-150)**2 + (ludwig.y-150)**2)/200, 0), 1)
     }
     
     input.onMouse("down", (a)=>{
-        console.log(input.mousePos.x, input.mousePos.y, input.checkKey('b'))
+        mc.x = input.mousePos.x - 32
+        mc.y = input.mousePos.y + 32 - mc.height/2
     }, 'left')
 }
