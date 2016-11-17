@@ -14,7 +14,6 @@
 //TODO:
     //MACRO:
     //unit testing
-    //babel + uglify es5 builds
     
     //FUTURE:
     //some sort of groups
@@ -23,6 +22,7 @@
     //spritesheet animations
     //animation timelining
     //view attached drawables (ui elements)
+    //blend modes
 
     //HIGH PRIORITY OVERARCHING:
     //framerate capping/locking
@@ -31,9 +31,8 @@
     //scene background color i.e. custom clear color
     //touch input support
     //tilt input
-    //view blend modes
-    //mouse cursor swapping i.e. INPUT.setCursor(img)
-    //draw smoothing on/off i.e. VIEW.smooth
+    //put the offscreen context in the scenemanager
+    
     //only render inside the canvas / camera i.e. using DRAWABLE.MAX SIZE GET
     //primitive drawable i.e. (square, circle, line, polygon etc)
 
@@ -228,7 +227,7 @@ class View {
 class SimpleView extends View {
     //skewing is also possible, but not implemented in this version of view
     //TODO: A version of View with this signature: constructor(dwidth=100, dheight=100, dx=0, dy=0, drot=0, sx=0, sy=0, zoomX=1, zoomY=1, srot=0)
-    constructor(dwidth=100, dheight=100, dx=0, dy=0, sx=0, sy=0, zoomX=1, zoomY=1) {
+    constructor(dwidth=100, dheight=100, dx=0, dy=0, sx=0, sy=0, zoomX=1, zoomY=1, smooth=true) {
         super()
         this.dwidth=dwidth|0
         this.dheight=dheight|0
@@ -240,6 +239,7 @@ class SimpleView extends View {
         
         this.zoomX=+zoomX
         this.zoomY=+zoomY
+        this.smooth = !!smooth
     }
     
     drawView(ctx, drawables) {
@@ -250,6 +250,8 @@ class SimpleView extends View {
         //perform zoom and translation
         ctx.setTransform(this.zoomX,0,0,this.zoomY,(this.dx-this.sx)*this.zoomX-this.dx|0,(this.dy-this.sy)*this.zoomY-this.dy|0)
 
+        ctx.imageSmoothingEnabled = this.smooth
+        
         for (let i = 0; i < drawables.length; i++)
             drawables[i].draw(ctx)
         
@@ -494,6 +496,7 @@ class Scene {
     }
 }
 
+//hack
 class SceneWithLoader extends Scene {
     constructor(hooks, width, height) {
         
@@ -672,10 +675,11 @@ class MediaLoader {
 }
 
 class Input {
-    constructor(el=document) {
+    constructor(el=document.body) {
         if (!((el instanceof HTMLElement) || (el instanceof HTMLDocument)))
             throw new TypeError("ParameterError: el must be a valid HTML element!")
         
+        this._el = el
         //allow this element to be focused
         if (el.tabIndex==-1)
             el.tabIndex = 1
@@ -764,6 +768,12 @@ class Input {
         }
     }
     
+    setCursor(...args) {
+        this._el.style.cursor = args.reduce(
+            (a,c)=> a + c + ', '
+        , "")+"auto"
+    }
+    
     onMouse(eventName, func, button) {
         if (!eventName)
             throw new TypeError("ParameterError: eventName required!")
@@ -777,7 +787,7 @@ class Input {
         this._mouseEvents[eventName].push({func, button})
     }
     
-    removeMouseListener(eventName, func) {
+    unMouse(eventName, func) {
         if (!eventName)
             throw new TypeError("ParameterError: eventName required!")
         if (!func)
@@ -802,7 +812,7 @@ class Input {
         this._keyEvents[eventName].push({func, key: (key)?key.toLowerCase():undefined})
     }
     
-    removeKeyListener(eventName, func) {
+    unKey(eventName, func) {
         if (!eventName)
             throw new TypeError("ParameterError: eventName required!")
         if (!func)
