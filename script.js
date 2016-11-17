@@ -74,7 +74,6 @@ class simpleText extends Drawable {
             ctx.fillStyle = this.color
         ctx.textBaseline = "top"
         
-        const {width} = ctx.measureText(this.text)
         const centerOffsetWidth = this.x|0
         const centerOffsetHeight = this.y|0
         
@@ -254,7 +253,8 @@ class SceneManager {
             throw new TypeError("Parametererror: scene required!")
         
         this.scene = scene
-        scene.play()
+        scene.setSize(this.canvas.width, this.canvas.height)
+        if (scene.play) scene.play()
         
         if (!this._running) {
             this._running = true
@@ -263,16 +263,18 @@ class SceneManager {
     }
     
     stop() {
-        scene.stop()
+        if (scene.stop) scene.stop()
         
         this._running = false
     }
     
     _loop() {
-        this.scene.drawScene(this.ctxt)
-        
         if (this._running)
             window.requestAnimationFrame(this._loop.bind(this))
+        
+        this.scene.drawScene(this.ctxt)
+        
+        
     }
 }
 
@@ -297,19 +299,33 @@ class Scene {
         this._viewArr = []
         
         //main hooks
-        this.play = hooks.play
+        if (hooks.create) {
+            this.play = function() {
+                hooks.create.bind(this)()
+                if (hooks.play) hooks.play.bind(this)()
+                this.play = hooks.play
+            }
+        } else {
+            this.play = hooks.play
+        }
         
         this.renderStart = hooks.renderStart || hooks.render
         this.renderEnd = hooks.renderEnd
         
         this.stop = hooks.stop
         
-        this.addView(new SimpleView(this._osCanvas.width, this._osCanvas.height))
+        this.default_view = new SimpleView(this._osCanvas.width, this._osCanvas.height)
+        this.addView(this.default_view)
     }
     
     setSize(width, height) {
         this._osCanvas.width = width || 100
         this._osCanvas.height = height || 100
+        if (this.default_view) {
+            this.default_view.dwidth = width || 100
+            this.default_view.dheight = height || 100
+        }
+            
     }
     
     drawScene(ctx) {
@@ -455,6 +471,30 @@ class Scene {
     }
 }
 
+class SceneWithLoader extends Scene {
+    constructor(hooks, width, height) {
+        
+        const create = hooks.create 
+        const renderStart = hooks.renderStart || hooks.render
+        const renderEnd = hooks.renderEnd
+        hooks.renderStart = hooks.loadRenderStart || hooks.loadRender
+        hooks.renderEnd = hooks.loadRenderEnd
+        
+        hooks.create = () => {
+            hooks.preload()
+            this.load.start()
+        }
+        super(hooks, width, height)
+        
+        this.load = new MediaLoader()
+        this.load.onComplete(() => {
+            this.renderStart = renderStart
+            this.renderEnd = renderEnd
+            create();
+        })
+    }
+}
+
 //IDEA: use es6 proxies to make a LazyRenderer class (useful for performance on things with a low change rate)
 //IDEA: make a ControlledRenderer class that only renders when told to
 
@@ -531,7 +571,7 @@ class DebugRenderLoop extends RenderLoop {
     }
 }
 
-class MediaLoadPool {
+class MediaLoader {
     
     constructor() {
         
@@ -540,11 +580,23 @@ class MediaLoadPool {
 
         this._loadArr = []
         
-        this.onProgress = function(){}
-        this.onComplete = function(){}
+        this._progressEvents = []
+        this._completeEvents = []
     }
     
-    addImage(src) {
+    onProgress(func) {
+        if (!func)
+            throw new TypeError("ParameterError: func callback required!")
+        this._progressEvents.push(func);
+    }
+    
+    onComplete(func) {
+        if (!func)
+            throw new TypeError("ParameterError: func callback required!")
+        this._completeEvents.push(func);
+    }
+    
+    image(src) {
         this.total++
         const temp = new Image()
         this._loadArr.push({obj: temp, src: src})
@@ -552,9 +604,9 @@ class MediaLoadPool {
         temp.onload = (function() {
             this.progress++
             if (this.progress == this.total)
-                this.onComplete()
+                this._completeEvents.forEach(f=>f())
             else
-                this.onProgress(this.progress, this.total)
+                this._progressEvents.forEach(f=>f(this.progress, this.total))
         }).bind(this)
         
         temp.onerror = function() {
@@ -564,7 +616,7 @@ class MediaLoadPool {
         return temp
     }
     
-    addAudio(src) {
+    audio(src) {
         this.total++
         const temp = new Audio()
         temp.preload = 'auto'
@@ -574,9 +626,9 @@ class MediaLoadPool {
             this.progress++
             temp.oncanplaythrough = null
             if (this.progress == this.total)
-                this.onComplete()
+                this._completeEvents.forEach(f=>f())
             else
-                this.onProgress(this.progress, this.total)
+                this._progressEvents.forEach(f=>f(this.progress, this.total))
         }).bind(this)
         
         temp.onerror = function() {
@@ -587,6 +639,9 @@ class MediaLoadPool {
     }
     
     start() {
+        if (this.total==0)
+            this._completeEvents.forEach(f=>f())
+        
         this._loadArr.forEach(e=>{
             e.obj.src = e.src
         })
@@ -736,35 +791,63 @@ class Input {
 const sm = new SceneManager(document.getElementById("canvas"))
 const input = new Input(document.getElementById("canvas"))
 
+const scene_complete = new SceneWithLoader({
+    preload: function() {
+        console.log("preload")
+    },
+    
+    play: function() {
+        console.log("play")
+    },
+    
+    loadRender: function() {
+        console.log("loadRender")
+    },
+    
+    create: function() {
+        console.log("create")
+    },
+    
+    render: function() {
+        console.log("render")
+    },
+    
+    stop: function() {
+        console.log("stop")
+    },
+})
+
+sm.play(scene_complete)
+
 var img1, img2, img3, img4, img5, sound1
 
 const scene_loading = new Scene({
     
-    play: function() {
+    create: function() {
         this.text_loading = this.addDrawable(new simpleText("loading progress:", 10, 10, undefined, "30px Comic Sans MS", "crimson"), 0)
         
-        this.pool = new MediaLoadPool()
+        this.load = new MediaLoader()
         
-        img1 = this.pool.addImage('http://vignette2.wikia.nocookie.net/minecraft/images/f/f0/Minecraft_Items.png/revision/latest?cb=20140102042917')
-        img2 = this.pool.addImage('https://tcrf.net/images/thumb/b/bf/Undertale_toby_dog.gif/50px-Undertale_toby_dog.gif')
-        img3 = this.pool.addImage('http://www.mariowiki.com/images/e/ee/Ludwig_Idle.gif')  
-        img4 = this.pool.addImage('http://opengameart.org/sites/default/files/spritesheet_caveman.png')
-        img5 = this.pool.addImage('http://www.nasa.gov/centers/jpl/images/content/650602main_pia15415-43.jpg')
+        img1 = this.load.image('http://vignette2.wikia.nocookie.net/minecraft/images/f/f0/Minecraft_Items.png/revision/latest?cb=20140102042917')
+        img2 = this.load.image('https://tcrf.net/images/thumb/b/bf/Undertale_toby_dog.gif/50px-Undertale_toby_dog.gif')
+        img3 = this.load.image('http://www.mariowiki.com/images/e/ee/Ludwig_Idle.gif')  
+        img4 = this.load.image('http://opengameart.org/sites/default/files/spritesheet_caveman.png')
+        img5 = this.load.image('http://www.nasa.gov/centers/jpl/images/content/650602main_pia15415-43.jpg')
 
-        sound1 = this.pool.addAudio('http://incompetech.com/music/royalty-free/mp3-royaltyfree/Inspired.mp3') 
+        sound1 = this.load.audio('http://incompetech.com/music/royalty-free/mp3-royaltyfree/Inspired.mp3') 
         
-        this.pool.start()
-        console.log
+        this.load.start()
     },
     
     render: function() {
-        this.text_loading.text = "loading progress: " + this.pool.progress + "/" + this.pool.total
-        console.log(this.pool.progress, this.pool.total)
-        if (this.pool.progress === this.pool.total)
+        this.text_loading.text = "loading progress: " + this.load.progress + "/" + this.load.total
+        if (this.load.progress === this.load.total)
             sm.play(scene_main)
     }
     
-}, 400, 400)
+})
+
+sm.play(scene_loading)
 
 
 
@@ -773,7 +856,7 @@ let frame = 0
 
 const scene_main = new Scene({
     
-    play: function() {
+    create: function() {
         view_other = this.addView(new SimpleView(100, 100, 200, 200, -50, -50, 2, 2), 1)
         
         sound1.play()
@@ -831,6 +914,4 @@ const scene_main = new Scene({
         sound1.volume = Math.min(Math.max(1-Math.sqrt((ludwig.x-150)**2 + (ludwig.y-150)**2)/200, 0), 1)
     }
     
-}, 400, 400)
-
-sm.play(scene_loading)
+})
