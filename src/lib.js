@@ -1,8 +1,3 @@
-//kid friendly game dev ui on top of:
-//language on top of:
-//game control system on top of:
-//canvas
-
 //easy to use networking support?
 //web sockets or webRTC
 
@@ -782,6 +777,20 @@ class Input {
         this._mouseEvents[eventName].push({func, button})
     }
     
+    removeMouseListener(eventName, func) {
+        if (!eventName)
+            throw new TypeError("ParameterError: eventName required!")
+        if (!func)
+            throw new TypeError("ParameterError: func callback required!")
+        if (!this._mouseEvents[eventName])
+            throw new Error(eventName + " is not a valid event!")
+        
+        const find = this._mouseEvents[eventName].findIndex(f=>f.func===func);
+        if (find === -1)
+            throw new Error("func is not a registered key listener!")
+        this._mouseEvents[eventName].splice(find,1);
+    }
+    
     onKey(eventName, func, key) {
         if (!eventName)
             throw new TypeError("ParameterError: eventName required!")
@@ -791,6 +800,20 @@ class Input {
             throw new Error(eventName + " is not a valid event!")
         
         this._keyEvents[eventName].push({func, key: (key)?key.toLowerCase():undefined})
+    }
+    
+    removeKeyListener(eventName, func) {
+        if (!eventName)
+            throw new TypeError("ParameterError: eventName required!")
+        if (!func)
+            throw new TypeError("ParameterError: func callback required!")
+        if (!this._keyEvents[eventName])
+            throw new Error(eventName + " is not a valid event!")
+        
+        const find = this._keyEvents[eventName].findIndex(f=>f.func===func);
+        if (find === -1)
+            throw new Error("func is not a registered key listener!")
+        this._keyEvents[eventName].splice(find,1);
     }
     
     checkKey(key) {
