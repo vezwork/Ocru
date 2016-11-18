@@ -12,29 +12,23 @@
 //distributed complexity
 
 //TODO:
-    //MACRO:
-    //unit testing
+    //big-picture:
+        //unit testing
+        //docs
+        //promo
     
     //FUTURE:
-    //some sort of groups
-    //tiling sprite drawable
-    //css backgrounds on scenes maybe
-    //spritesheet animations
-    //animation timelining
-    //view attached drawables (ui elements)
-    //blend modes
-
-    //HIGH PRIORITY OVERARCHING:
-    //framerate capping/locking
+        //some sort of groups
+        //tiling sprite drawable
+        //spritesheet animations
+        //animation timelining
+        //view attached drawables (ui elements)
+        //blend modes
+        //optimization e.g. don't draw things outside view
 
     //DOABLE:
-    //scene background color i.e. custom clear color
-    //touch input support
-    //tilt input
-    //put the offscreen context in the scenemanager
-    
-    //only render inside the canvas / camera i.e. using DRAWABLE.MAX SIZE GET
-    //primitive drawable i.e. (square, circle, line, polygon etc)
+        //backgrounds using draw blend modes i.e. source-over?
+        //touch input support
 
 "use strict"
 
@@ -227,7 +221,7 @@ class View {
 class SimpleView extends View {
     //skewing is also possible, but not implemented in this version of view
     //TODO: A version of View with this signature: constructor(dwidth=100, dheight=100, dx=0, dy=0, drot=0, sx=0, sy=0, zoomX=1, zoomY=1, srot=0)
-    constructor(dwidth=100, dheight=100, dx=0, dy=0, sx=0, sy=0, zoomX=1, zoomY=1, smooth=true) {
+    constructor(dwidth=100, dheight=100, dx=0, dy=0, sx=0, sy=0, zoomX=1, zoomY=1, backgroundColor, smooth=true) {
         super()
         this.dwidth=dwidth|0
         this.dheight=dheight|0
@@ -240,13 +234,22 @@ class SimpleView extends View {
         this.zoomX=+zoomX
         this.zoomY=+zoomY
         this.smooth = !!smooth
+        
+        this.backgroundColor = backgroundColor
     }
     
     drawView(ctx, drawables) {
-        //TODO: if sprite outside boundaries, don't draw it, consider zoom&rotation of view and rotation of sprite
-        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-        
         ctx.save()
+        
+        
+        if (this.backgroundColor) {
+            ctx.fillStyle = this.backgroundColor
+            ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+        } else {
+            ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+        }
+        
+        
         //perform zoom and translation
         ctx.setTransform(this.zoomX,0,0,this.zoomY,(this.dx-this.sx)*this.zoomX-this.dx|0,(this.dy-this.sy)*this.zoomY-this.dy|0)
 
@@ -265,12 +268,17 @@ class SimpleView extends View {
 }
 
 class SceneManager {
-    constructor(canvas) {
+    constructor(canvas, fpscap=60) {
         if (!canvas)
             throw new TypeError("Parametererror: canvas required!")
         
         this.canvas = canvas
         this.ctxt = canvas.getContext("2d")
+        this.fpscap = fpscap|0
+        
+        this._debug = {}
+        this._debug.lastSecond = window.performance.now()
+        this._debug.framesThisSecond = 0
     }
     
     play(scene) {
@@ -297,9 +305,16 @@ class SceneManager {
         if (this._running)
             window.requestAnimationFrame(this._loop.bind(this))
         
-        this.scene.drawScene(this.ctxt)
-        
-        
+        //calculate fps
+        if (window.performance.now() > this._debug.lastSecond + 1000) {
+            this._debug.lastSecond = window.performance.now()
+            this._debug.framesThisSecond = 0
+        }
+        //limit fps
+        if (this.fpscap==60 || this._debug.framesThisSecond < (window.performance.now() - this._debug.lastSecond) / 1000 * this.fpscap) {
+            this.scene.drawScene(this.ctxt)
+            this._debug.framesThisSecond++
+        }
     }
 }
 
@@ -349,8 +364,7 @@ class Scene {
         if (this.default_view) {
             this.default_view.dwidth = width || 100
             this.default_view.dheight = height || 100
-        }
-            
+        }  
     }
     
     drawScene(ctx) {
@@ -524,79 +538,6 @@ class SceneWithLoader extends Scene {
 //IDEA: use es6 proxies to make a LazyRenderer class (useful for performance on things with a low change rate)
 //IDEA: make a ControlledRenderer class that only renders when told to
 
-class RenderLoop {
-    
-    constructor(scene, ctxt) {
-        if (!scene)
-            throw new TypeError("Parametererror: scene required!")
-        if (!(scene instanceof Scene)) 
-            throw new TypeError("ParameterError: scene must be an Scene object!")
-        
-        if (!ctxt)
-            throw new TypeError("Parametererror: ctxt required!")
-        if (!(ctxt instanceof CanvasRenderingContext2D)) 
-            throw new TypeError("ParameterError: ctxt must be an CanvasRenderingContext2D object!")
-        
-        this.scene = scene
-        this.ctxt = ctxt
-        
-        this.onDrawStart = function() {}
-        this.onDrawEnd = function() {}
-        
-        this.start()
-    }
-    
-    start() {
-        if (!this._running) {
-            this._running = true
-            this._loop()
-        } else {
-            throw new Error("RenderLoop instance was asked to start while running")
-        }
-    }
-    
-    stop() {
-        if (this._running) {
-            this._running = false
-        } else {
-            throw new Error("RenderLoop instance was asked to stop while stopped")
-        }
-    }
-    
-    _loop() {
-        this.onDrawStart()
-        
-        this.scene.drawScene(this.ctxt)
-        
-        this.onDrawEnd()
-        if (this._running)
-            window.requestAnimationFrame(this._loop.bind(this))
-    }
-}
-
-//add longest frame delay for this second
-class DebugRenderLoop extends RenderLoop {
-    constructor(scene, ctxt) {
-        super(scene, ctxt)
-        this._debug = {}
-        this._debug.lastSecond = window.performance.now()
-        this._debug.framesThisSecond = 0
-        this._debug.text = this.scene.addDrawable(new simpleText("FPS: calculating...", 10, 10, 0), 1000)
-    }
-    
-    _loop() {
-        super._loop()
-        if (this._debug) {
-            this._debug.framesThisSecond++
-            if (window.performance.now() > this._debug.lastSecond + 1000) {
-                this._debug.text.text = "FPS: " + this._debug.framesThisSecond
-                this._debug.lastSecond = window.performance.now()
-                this._debug.framesThisSecond = 0
-            }
-        }
-    }
-}
-
 class MediaLoader {
     
     constructor() {
@@ -688,6 +629,8 @@ class Input {
         this.buttonsDown = {}
         this.mousePos = { x: 0, y:0 }
         
+        this.tilt = { abs: false, z:0, x:0, y:0 }
+        
         //callback registry
         this._mouseEvents = {
             down: [],
@@ -699,11 +642,20 @@ class Input {
             down: [],
             up: []
         }
-        //IDEAs:
-        //gamepad
-        //touch vs mouse (perhaps gestures too)
-        //tilt
         
+        this._tiltEvents = []
+        
+        //tilt
+        window.addEventListener('deviceorientation', e=>{
+            this._tiltEvents.forEach(o=>o())
+            this.tilt = {
+                abs: e.absolute,
+                z: e.alpha,
+                x: e.beta,
+                y: e.gamma
+            }
+        });
+        //mouse and keybaord
         //disable the context menu
         el.oncontextmenu=e=>e.preventDefault()
         //add callbacks
@@ -824,6 +776,22 @@ class Input {
         if (find === -1)
             throw new Error("func is not a registered key listener!")
         this._keyEvents[eventName].splice(find,1);
+    }
+    
+    onTilt(func) {
+        if (!func)
+            throw new TypeError("ParameterError: func callback required!")
+        this._tiltEvents.push(func)
+    }
+    
+    unTilt(func) {
+        if (!func)
+            throw new TypeError("ParameterError: func callback required!")
+        
+        const find = this._tiltEvents.findIndex(f=>f.func===func);
+        if (find === -1)
+            throw new Error("func is not a registered key listener!")
+        this._tiltEvents.splice(find,1);
     }
     
     checkKey(key) {
