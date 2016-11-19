@@ -96,7 +96,6 @@ class SimpleText extends Drawable {
         
         ctx.textBaseline = "top"
         ctx.fillText(this.text, this.x, this.y, this.width)
-        
         ctx.restore()
     }
 } 
@@ -249,9 +248,11 @@ class SceneManager {
         this.ctxt = canvas.getContext("2d")
         this.fpscap = fpscap|0
         
-        this._debug = {}
-        this._debug.lastSecond = window.performance.now()
-        this._debug.framesThisSecond = 0
+        this.debug = {
+            _lastSecond: window.performance.now(),
+            _framesThisSecond: 0,
+            fps: 0
+        }
     }
     
     play(scene) {
@@ -279,14 +280,15 @@ class SceneManager {
             window.requestAnimationFrame(this._loop.bind(this))
         
         //calculate fps
-        if (window.performance.now() > this._debug.lastSecond + 1000) {
-            this._debug.lastSecond = window.performance.now()
-            this._debug.framesThisSecond = 0
+        if (window.performance.now() > this.debug._lastSecond + 1000) {
+            this.debug._lastSecond = window.performance.now()
+            this.debug.fps = this.debug._framesThisSecond
+            this.debug._framesThisSecond = 0
         }
         //limit fps
-        if (this.fpscap==60 || this._debug.framesThisSecond < (window.performance.now() - this._debug.lastSecond) / 1000 * this.fpscap) {
+        if (this.fpscap==60 || this.debug._framesThisSecond < (window.performance.now() - this.debug._lastSecond) / 1000 * this.fpscap) {
             this.scene.drawScene(this.ctxt)
-            this._debug.framesThisSecond++
+            this.debug._framesThisSecond++
         }
     }
 }
@@ -359,6 +361,8 @@ class Scene {
             throw new TypeError("Parametererror: view required!")
         if (!(view instanceof View))
             throw new TypeError("Parametererror: view must be an instance of View!")
+        if (view._rl_depth != undefined)
+            throw new Error("view is already registered to a scene!")
         
         view._rl_depth = depth
         //insert into array at proper position
@@ -414,6 +418,8 @@ class Scene {
             throw new TypeError("Parametererror: drawable required!")
         if (!(drawable instanceof Drawable))
             throw new TypeError("Parametererror: drawable must be an instance of Drawable!")
+        if (drawable._rl_depth != undefined)
+            throw new Error("drawable is already registered to a scene!")
         
         drawable._rl_depth = depth
         //insert into array at proper position
