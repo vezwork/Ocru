@@ -19,7 +19,6 @@
     
     //FUTURE:
         //some sort of groups
-        //tiling sprite drawable
         //spritesheet animations
         //animation timelining
         //view attached drawables (ui elements)
@@ -29,159 +28,129 @@
     //DOABLE:
         //backgrounds using draw blend modes i.e. source-over?
         //touch input support
+        //tiling sprite drawable
 
 "use strict"
 
 //Drawable interface
 class Drawable {
-    draw(ctx, viewCtx) {}
-}
-
-class rectangle extends Drawable {
-    constructor(x=0, y=0, rot=0, width=0, height=0, color, opacity=1) {
-        super()
-        
+    constructor(x=0, y=0, width=0, height=0, rot=0, opacity=1) {
         this.x = x|0
         this.y = y|0
-        this.rot = +rot
         this.width = width|0
         this.height = height|0
-        this.color = color+''
+        this.rot = +rot
         this.opacity = +opacity
+        
+        this.scaleX = 1
+        this.scaleY = 1
+    }
+    draw(ctx) {
+        //handle opacity
+        ctx.globalAlpha = this.opacity
+        //handle rotation and scaling
+        if (this.rot != 0) {
+            const centerOffsetWidth = this.x+this.width/2|0
+            const centerOffsetHeight = this.y+this.height/2|0
+            ctx.translate(centerOffsetWidth, centerOffsetHeight)
+            ctx.rotate(this.rot)
+            ctx.scale(this.scaleX,this.scaleY)
+            ctx.translate(-centerOffsetWidth, -centerOffsetHeight)
+        }
+        //the subclass must handle using x,y,width,height and must restore the ctx
+    }
+}
+
+class Rectangle extends Drawable {
+    constructor(x, y, width, height, rot, opacity, color) {
+        super(x, y, width, height, rot, opacity)
+        this.color = color+''
     }
     
     draw(ctx) {
         ctx.save()
-        ctx.globalAlpha = this.opacity
+        super.draw(ctx)
         if (this.color)
             ctx.fillStyle = this.color
         
-        const centerOffsetWidth = this.x+this.width/2|0
-        const centerOffsetHeight = this.y+this.height/2|0
-        
-        ctx.translate(centerOffsetWidth, centerOffsetHeight)
-        ctx.rotate(this.rot)
-        ctx.translate(-centerOffsetWidth, -centerOffsetHeight)
-        
-        ctx.fillRect(this.x,this.y,this.width,this.height)
+        ctx.fillRect(this.x|0,this.y|0,this.width|0,this.height|0)
         ctx.restore()
     }
 }
 
-class simpleText extends Drawable {
-    constructor(text='', x=0, y=0, rot=0, font, color, opacity=1) {
-        super()
+class SimpleText extends Drawable {
+    constructor(text='', x, y, width=100000, height=14, color='#000', font='arial', rot, opacity) {
+        super(x, y, width, height, rot, opacity)
         
         this.text = text+''
-        this.x = x|0
-        this.y = y|0
-        this.rot = +rot
         this.font = font+''
         this.color = color+''
-        this.opacity = +opacity
     }
     
     draw(ctx) {
         ctx.save()
-        ctx.globalAlpha = this.opacity
-        if (this.font)
-            ctx.font = this.font
-        if (this.color)
-            ctx.fillStyle = this.color
+        super.draw(ctx)
+        
+        ctx.font = this.height + "px " + this.font
+        ctx.fillStyle = this.color
+        
         ctx.textBaseline = "top"
+        ctx.fillText(this.text, this.x, this.y, this.width)
         
-        const centerOffsetWidth = this.x|0
-        const centerOffsetHeight = this.y|0
-        
-        ctx.translate(centerOffsetWidth, centerOffsetHeight)
-        ctx.rotate(this.rot)
-        ctx.translate(-centerOffsetWidth, -centerOffsetHeight)
-        
-        ctx.fillText(this.text, this.x, this.y)
         ctx.restore()
     }
 } 
 
 class Sprite extends Drawable {
-    constructor(image, x=0, y=0, rot=0, width=0, height=0, subimage=0, mirrorX=false, mirrorY=false, opacity=1) {
-        super()
+    constructor(image, x, y, width, height, rot, opacity) {
+        
         if (image instanceof Image) {
             if (image.naturalHeight == 0)
                 throw new TypeError("ParameterError: image is an Image but has no source or hasn't loaded yet!")
+            
+            super(x, y, width || image.naturalWidth, height || image.naturalHeight, rot, opacity)
+            
             this.image = image
+            this.draw = this._imageDraw
             
-            this.height = height|0 || this.image.naturalHeight
-            this.width = width|0 || this.image.naturalWidth
+        } else if (image instanceof Sprite.Sheet) {
             
-            this.draw = function(ctx) {
-                const centerOffsetWidth = this.x+this.width/2|0
-                const centerOffsetHeight = this.y+this.height/2|0
-                
-                ctx.save()
-                ctx.globalAlpha = this.opacity
-                ctx.translate(centerOffsetWidth, centerOffsetHeight)
-                ctx.rotate(this.rot)
-                if (this.mirrorX && this.mirrorY) 
-                    ctx.scale(-1,-1)
-                else if (this.mirrorX)
-                    ctx.scale(-1,1)
-                else if (this.mirrorY)
-                    ctx.scale(1,-1)
-                ctx.translate(-centerOffsetWidth, -centerOffsetHeight)
-                ctx.drawImage(this.image, this.x|0, this.y|0, this.width|0, this.height|0)
-                ctx.restore()
-            }
-        } else if (image instanceof SpriteSheet) {
+            super(x, y, width || image.subimageWidth, height || image.subimageHeight, rot, opacity)
+            
             this.spriteSheet = image
-            this.subimage = subimage|0
+            this.subimage = 0
+            this.draw = this._sheetDraw
             
-            this.height = height|0 || this.spriteSheet.subimageHeight
-            this.width = width|0 || this.spriteSheet.subimageWidth
-            
-            this.draw = function(ctx) { //draw a SpriteSheet
-                const centerOffsetWidth = this.x+this.width/2|0
-                const centerOffsetHeight = this.y+this.height/2|0
-                
-                ctx.save()
-                ctx.globalAlpha = this.opacity
-                ctx.translate(centerOffsetWidth, centerOffsetHeight)
-                ctx.rotate(this.rot)
-                if (this.mirrorX && this.mirrorY) 
-                    ctx.scale(-1,-1)
-                else if (this.mirrorX)
-                    ctx.scale(-1,1)
-                else if (this.mirrorY)
-                    ctx.scale(1,-1)
-                ctx.translate(-centerOffsetWidth, -centerOffsetHeight)
-
-                ctx.drawImage(this.spriteSheet.image, 
-                              this.spriteSheet.getFrameX(this.subimage)|0, 
-                              this.spriteSheet.getFrameY(this.subimage)|0, 
-                              this.spriteSheet.subimageWidth|0,
-                              this.spriteSheet.subimageHeight|0,
-                              this.x|0, 
-                              this.y|0, 
-                              this.width|0, 
-                              this.height|0
-                             )
-                ctx.restore()
-            }
         } else {
             throw new TypeError("ParameterError: image must be an Image or SpriteSheet object!")
         }
-            
-        this.x = x|0
-        this.y = y|0
-        this.rot = +rot
-        this.mirrorX = !!mirrorX
-        this.mirrorY = !!mirrorY
-        this.opacity = +opacity
+    }
+    
+    _imageDraw(ctx) {
+        ctx.save()
+        super.draw(ctx)
+        ctx.drawImage(this.image, this.x|0, this.y|0, this.width|0, this.height|0)
+        ctx.restore()
+    }
+    
+    _sheetDraw(ctx) { //draw a SpriteSheet
+        ctx.save()
+        super.draw(ctx)
+        ctx.drawImage(this.spriteSheet.image, 
+                      this.spriteSheet.getFrameX(this.subimage)|0, 
+                      this.spriteSheet.getFrameY(this.subimage)|0, 
+                      this.spriteSheet.subimageWidth|0,
+                      this.spriteSheet.subimageHeight|0,
+                      this.x|0, 
+                      this.y|0, 
+                      this.width|0, 
+                      this.height|0
+                     )
+        ctx.restore()
     }
 }
 
-//only supports spritesheets with subimages right next to eachother as of now
-class SpriteSheet {
-    
+Sprite.Sheet = class {
     constructor(image, subimageWidth, subimageHeight, subimageCount) {
     
         if (!(image instanceof Image)) 
@@ -212,6 +181,8 @@ class SpriteSheet {
     } 
 }
 
+//only supports spritesheets with subimages right next to eachother as of now
+
 class View {
     drawView(ctx, drawables) {}
 }
@@ -219,7 +190,6 @@ class View {
 //  maintains viewport state, draws Drawable arrays based upon state, can pass viewContext to Drawables (i.e. 3d drawables need view context), interacts with ctx,
 //  has viewStart and viewEnd callbacks
 class SimpleView extends View {
-    //skewing is also possible, but not implemented in this version of view
     //TODO: A version of View with this signature: constructor(dwidth=100, dheight=100, dx=0, dy=0, drot=0, sx=0, sy=0, zoomX=1, zoomY=1, srot=0)
     constructor(dwidth=100, dheight=100, dx=0, dy=0, sx=0, sy=0, zoomX=1, zoomY=1, backgroundColor, smooth=true) {
         super()
@@ -240,18 +210,21 @@ class SimpleView extends View {
     
     drawView(ctx, drawables) {
         ctx.save()
-        
-        
+        //background color
         if (this.backgroundColor) {
             ctx.fillStyle = this.backgroundColor
             ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height)
         } else {
             ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
         }
-        
-        
         //perform zoom and translation
-        ctx.setTransform(this.zoomX,0,0,this.zoomY,(this.dx-this.sx)*this.zoomX-this.dx|0,(this.dy-this.sy)*this.zoomY-this.dy|0)
+        ctx.setTransform(this.zoomX,
+                         0,
+                         0,
+                         this.zoomY,
+                         (this.dx-this.sx)*this.zoomX-this.dx|0,
+                         (this.dy-this.sy)*this.zoomY-this.dy|0
+                        )
 
         ctx.imageSmoothingEnabled = this.smooth
         
@@ -330,9 +303,6 @@ class Scene {
         this._osCanvas.height = height || 100
         this._osCtx = this._osCanvas.getContext("2d")
         
-        //this.osCtx.imageSmoothingEnabled = false
-        
-        this._drawableHash = {}
         this._drawableArr = []
         
         this._viewHash = {}
