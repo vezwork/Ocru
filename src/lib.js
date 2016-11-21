@@ -1,8 +1,3 @@
-//easy to use networking support?
-//web sockets or webRTC
-
-//maybe more audio manipulation
-
 //GOALS:
 //extensible
 //modular
@@ -26,9 +21,9 @@
         //optimization e.g. don't draw things outside view
 
     //DOABLE:
-        //backgrounds using draw blend modes i.e. source-over?
-        //touch input support
         //tiling sprite drawable
+        //clean up input (can be reduced to like half the code and more readable)
+        //test touch and tilt on a real device
 
 "use strict"
 
@@ -49,7 +44,7 @@ class Drawable {
         //handle opacity
         ctx.globalAlpha = this.opacity
         //handle rotation and scaling
-        if (this.rot != 0) {
+        if (this.rot != 0 || this.scaleX != 1 || this.scaleY != 1) {
             const centerOffsetWidth = this.x+this.width/2|0
             const centerOffsetHeight = this.y+this.height/2|0
             ctx.translate(centerOffsetWidth, centerOffsetHeight)
@@ -251,7 +246,8 @@ class SceneManager {
         this.debug = {
             _lastSecond: window.performance.now(),
             _framesThisSecond: 0,
-            fps: 0
+            fps: 0,
+            drawsPerFrame: 0
         }
     }
     
@@ -284,6 +280,7 @@ class SceneManager {
             this.debug._lastSecond = window.performance.now()
             this.debug.fps = this.debug._framesThisSecond
             this.debug._framesThisSecond = 0
+            this.debug.drawsPerFrame = this.scene._drawableArr.length * this.scene._viewArr.length
         }
         //limit fps
         if (this.fpscap==60 || this.debug._framesThisSecond < (window.performance.now() - this.debug._lastSecond) / 1000 * this.fpscap) {
@@ -307,7 +304,6 @@ class Scene {
         
         this._drawableArr = []
         
-        this._viewHash = {}
         this._viewArr = []
         
         //main hooks
@@ -607,11 +603,12 @@ class Input {
         
         this.tilt = { abs: false, z:0, x:0, y:0 }
         
+        this.touches = {}
+        
         //callback registry
         this._mouseEvents = {
             down: [],
-            up: [],
-            move: []
+            up: []
         };
         
         this._keyEvents = {
@@ -621,6 +618,12 @@ class Input {
         
         this._tiltEvents = []
         
+        this._touchEvents = {
+            start: [],
+            cancel: [],
+            end: []
+        }
+
         //tilt
         window.addEventListener('deviceorientation', e=>{
             this._tiltEvents.forEach(o=>o())
@@ -630,50 +633,48 @@ class Input {
                 x: e.beta,
                 y: e.gamma
             }
-        });
+        })
         //mouse and keybaord
         //disable the context menu
-        el.oncontextmenu=e=>e.preventDefault()
+        el.addEventListener('contextmenu', e=>e.preventDefault())
         //add callbacks
-        el.onmousedown=e=>{
+        el.addEventListener('mousedown', e=>{
             e.preventDefault()
-            e.target.focus()
+            this._el.focus()
             this.buttonsDown[e.button] = true
             this._mouseEvents.down.forEach(o=>{
-                if (o.button!=undefined) {
+                if (o.button!==undefined) {
                     if (o.button==e.button) 
                         o.func(e.button)   
                 }
                 else
                     o.func(e.button)
             })
-        }
-        el.onmouseup=e=>{
+        })
+        el.addEventListener('mouseup', e=>{
             e.preventDefault()
-            e.target.focus()
             this.buttonsDown[e.button] = false
             this._mouseEvents.up.forEach(o=>{
-                if (o.button!=undefined) {
+                if (o.button!==undefined) {
                     if (o.button==e.button) 
                         o.func(e.button)   
                 }
                 else
                     o.func(e.button)
             })
-        }
-        el.onmousemove=e=>{
-            this._mouseEvents.move.forEach(o=>o.func())
-            const {left, top} = canvas.getBoundingClientRect()
+        })
+        el.addEventListener('mousemove', e=>{
+            const {left, top} = this._el.getBoundingClientRect()
             this.mousePos.x = e.clientX - left
             this.mousePos.y = e.clientY - top
-        }
+        })
         
-        el.onkeydown=e=>{
+        el.addEventListener('keydown', e=>{
             if (!this.keysDown[e.key.toLowerCase()]) {
                 e.preventDefault()
                 this.keysDown[e.key.toLowerCase()] = true
                 this._keyEvents.down.forEach(o=>{
-                    if (o.key) {
+                    if (o.key!==undefined) {
                         if (o.key==e.key.toLowerCase()) 
                             o.func(e.key)   
                     }
@@ -681,19 +682,84 @@ class Input {
                         o.func(e.key)
                 })
             }
-        }
-        el.onkeyup=e=>{
+        })
+        el.addEventListener('keyup', e=>{
             e.preventDefault()
             this.keysDown[e.key.toLowerCase()] = false
             this._keyEvents.up.forEach(o=>{
-                if (o.key) {
+                if (o.key!==undefined) {
                     if (o.key==e.key.toLowerCase()) 
                         o.func(e.key)   
                 }
                 else
                     o.func(e.key)
             })
+        })
+        //touch
+        el.addEventListener('touchstart', e=>{
+            e.preventDefault()
+            this._el.focus()
+            const touches = this._processTouches(e.changedTouches)
+            
+            this._touchEvents.start.forEach(o=>{
+                if (o.id!==undefined) {
+                    if (touches[o.id]!= undefined)
+                        o.func(touches)
+                }
+                else
+                    o.func(touches)
+                    
+            })
+        })
+        
+        el.addEventListener('touchmove', e=>{
+            e.preventDefault()
+            this.touches = this._processTouches(e.touches)
+        })
+        
+        el.addEventListener('touchcancel', e=>{
+            e.preventDefault()
+            const touches = this._processTouches(e.changedTouches)
+            
+            this._touchEvents.cancel.forEach(o=>{
+                if (o.id!==undefined) {
+                    if (touches[o.id]!= undefined)
+                        o.func(touches)
+                }
+                else
+                    o.func(touches)
+                    
+            })
+        })
+        
+        el.addEventListener('touchend', e=>{
+            e.preventDefault()
+            const touches = this._processTouches(e.changedTouches, true)
+            this._touchEvents.end.forEach(o=>{
+                if (o.id!==undefined) {
+                    if (touches[o.id]!= undefined)
+                        o.func(touches)
+                }
+                else
+                    o.func(touches)
+                    
+            })
+        })
+    }
+    
+    _processTouches(touches, del) {
+        const formatted = {}
+        for(let i = 0; i < touches.length; i++) {
+            const {left, top} = this._el.getBoundingClientRect()
+            if (del)
+                delete this.touches[touches[i].identifier]
+                
+            formatted[touches[i].identifier] = {
+                x: touches[i].clientX - left |0,
+                y: touches[i].clientY - top |0
+            }
         }
+        return formatted
     }
     
     setCursor(...args) {
@@ -768,6 +834,31 @@ class Input {
         if (find === -1)
             throw new Error("func is not a registered key listener!")
         this._tiltEvents.splice(find,1);
+    }
+    
+    onTouch(eventName, func, id) {
+        if (!eventName)
+            throw new TypeError("ParameterError: eventName required!")
+        if (!func)
+            throw new TypeError("ParameterError: func callback required!")
+        if (!this._touchEvents[eventName])
+            throw new Error(eventName + " is not a valid event!")
+
+        this._touchEvents[eventName].push({func, id})
+    }
+    
+    unTouch(eventName, func) {
+        if (!eventName)
+            throw new TypeError("ParameterError: eventName required!")
+        if (!func)
+            throw new TypeError("ParameterError: func callback required!")
+        if (!this._touchEvents[eventName])
+            throw new Error(eventName + " is not a valid event!")
+        
+        const find = this._touchEvents[eventName].findIndex(f=>f.func===func);
+        if (find === -1)
+            throw new Error("func is not a registered key listener!")
+        this._touchEvents[eventName].splice(find,1);
     }
     
     checkKey(key) {
