@@ -11,14 +11,13 @@
         //unit testing
         //docs
         //promo
+        //optimization
     
     //FUTURE:
         //some sort of groups
         //spritesheet animations
         //animation timelining
         //view attached drawables (ui elements)
-        //blend modes
-        //optimization e.g. don't draw things outside view
 
     //DOABLE:
         //tiling sprite drawable
@@ -29,7 +28,7 @@
 
 //Drawable interface
 class Drawable {
-    constructor(x=0, y=0, width=0, height=0, rot=0, opacity=1) {
+    constructor(x=0, y=0, width=0, height=0, rot=0, opacity=1, blendmode='source-over') {
         this.x = x|0
         this.y = y|0
         this.width = width|0
@@ -39,25 +38,28 @@ class Drawable {
         
         this.scaleX = 1
         this.scaleY = 1
+        
+        this.blendmode = blendmode+''
     }
     draw(ctx) {
         //handle opacity
         ctx.globalAlpha = this.opacity
-        //handle rotation and scaling
-        if (this.rot != 0 || this.scaleX != 1 || this.scaleY != 1) {
-            const centerOffsetWidth = this.x+this.width/2|0
-            const centerOffsetHeight = this.y+this.height/2|0
-            ctx.translate(centerOffsetWidth, centerOffsetHeight)
-            ctx.rotate(this.rot)
-            ctx.scale(this.scaleX,this.scaleY)
-            ctx.translate(-centerOffsetWidth, -centerOffsetHeight)
-        }
+        ctx.globalCompositeOperation = this.blendmode;
+        
+        const centerOffsetWidth = this.x+this.width/2|0
+        const centerOffsetHeight = this.y+this.height/2|0
+        //scaling
+        ctx.translate(centerOffsetWidth, centerOffsetHeight)
+        //rotation
+        ctx.rotate(this.rot)
+        ctx.scale(this.scaleX,this.scaleY)
+        ctx.translate(-centerOffsetWidth, -centerOffsetHeight)
         //the subclass must handle using x,y,width,height and must restore the ctx
     }
 }
 
 class Rectangle extends Drawable {
-    constructor(x, y, width, height, rot, opacity, color) {
+    constructor(x, y, width, height, rot, opacity, color='black') {
         super(x, y, width, height, rot, opacity)
         this.color = color+''
     }
@@ -65,8 +67,7 @@ class Rectangle extends Drawable {
     draw(ctx) {
         ctx.save()
         super.draw(ctx)
-        if (this.color)
-            ctx.fillStyle = this.color
+        ctx.fillStyle = this.color
         
         ctx.fillRect(this.x|0,this.y|0,this.width|0,this.height|0)
         ctx.restore()
@@ -246,8 +247,7 @@ class SceneManager {
         this.debug = {
             _lastSecond: window.performance.now(),
             _framesThisSecond: 0,
-            fps: 0,
-            drawsPerFrame: 0
+            fps: 0
         }
     }
     
@@ -280,13 +280,142 @@ class SceneManager {
             this.debug._lastSecond = window.performance.now()
             this.debug.fps = this.debug._framesThisSecond
             this.debug._framesThisSecond = 0
-            this.debug.drawsPerFrame = this.scene._drawableArr.length * this.scene._viewArr.length
         }
         //limit fps
         if (this.fpscap==60 || this.debug._framesThisSecond < (window.performance.now() - this.debug._lastSecond) / 1000 * this.fpscap) {
             this.scene.drawScene(this.ctxt)
             this.debug._framesThisSecond++
         }
+    }
+}
+
+//inserts an object into an sorted array, sorted based upon an object's _rl_index property
+function rlindexInsert(object, arr) {
+    var low = 0,
+        high = arr.length
+
+    while (low < high) {
+        var mid = (low + high) >>> 1
+        if (arr[mid]._rl_depth < object._rl_depth) low = mid + 1
+        else high = mid
+    }
+    
+    object._rl_index = low
+    arr.splice(low, 0, object)
+    //update index counter of sprites being pushed up by insertion
+    for (let i = low+1; i < arr.length; i++) {
+        arr[i]._rl_index++
+    }
+}
+
+//abstract class below Drawable
+class DrawableCollection extends Drawable {
+    constructor(x, y, width, height, rot, opacity, blendmode) {
+        super(x, y, width, height, rot, opacity, blendmode)
+     
+        this._drawableArr = []
+    }
+    
+    addDrawable(drawable, depth=0) {
+        if (!drawable)
+            throw new TypeError("Parametererror: drawable required!")
+        if (!(drawable instanceof Drawable))
+            throw new TypeError("Parametererror: drawable must be an instance of Drawable!")
+        if (drawable._rl_depth != undefined)
+            throw new Error("drawable is already registered to a scene!")
+        
+        drawable._rl_depth = depth
+        //insert into array at proper position
+        rlindexInsert(drawable, this._drawableArr)
+        
+        //add the ability to delete this drawable
+        drawable.remove = (function() {
+            this.removeDrawable(drawable)
+        }).bind(this)
+        
+        //add depth setter and getter to drawable for ease of use
+        Object.defineProperty(drawable, 'depth', {
+            get: function() { 
+                return this._rl_depth
+            },
+            set: (function(newValue) {
+                this.setDrawableDepth(drawable, newValue)
+            }).bind(this),
+            enumerable: true,
+            configurable: true
+        })
+
+        return drawable
+    }
+    
+    removeDrawable(drawable) {
+        //remove from array
+        this._drawableArr.splice(drawable._rl_index, 1)
+        //clean and remove from hash
+        delete drawable.depth
+        delete drawable.remove
+        delete drawable._rl_depth
+        delete drawable._rl_index
+    }
+    
+    setDrawableDepth(drawable, depth=0) {
+        //remove from array
+        this._drawableArr.splice(drawable._rl_index, 1)
+        drawable._rl_depth = depth
+        //reinsert
+        rlindexInsert(drawable, this._drawableArr)
+    }
+}
+
+//could be extended to support rotation, height and width (clipping), smoothing, background color
+class SimpleLayer extends DrawableCollection {
+    constructor(x, y, width, height, rot, opacity, blendmode, osCtx) {
+        super(x, y, width, height, rot, opacity, blendmode)
+        
+        if (osCtx && osCtx instanceof CanvasRenderingContext2D) {
+            this._osCtx = osCtx
+            osCtx.width = width
+            osCtx.height = height
+        } else {
+            const c = document.createElement("canvas")
+            c.width = width
+            c.height = height
+            this._osCtx = c.getContext("2d")
+        }
+    }
+    
+    draw(ctx) {
+        this._osCtx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+        
+        for (let i = 0; i < this._drawableArr.length; i++)
+            this._drawableArr[i].draw(this._osCtx)
+        
+        ctx.save()
+        super.draw(ctx)
+        ctx.drawImage(this._osCtx.canvas, this.x, this.y)
+        ctx.restore()
+    }
+}
+
+class Group extends DrawableCollection {
+    constructor(x, y, rot, scaleX=1, scaleY=1) {
+        super(x, y, 0, 0, rot)
+        
+        this.scaleX = scaleX
+        this.scaleY = scaleY
+    }
+    
+    draw(ctx) {
+        //cant use ctx.save() because it is overwritten by the drawables in the group
+        ctx.translate(this.x, this.y)
+        ctx.rotate(this.rot)
+        ctx.rotate(this.rot)
+        ctx.scale(this.scaleX,this.scaleY)
+        
+        for (let i = 0; i < this._drawableArr.length; i++)
+            this._drawableArr[i].draw(ctx)
+        
+        ctx.setTransform(1,1,1,1,0,0);
     }
 }
 
@@ -362,7 +491,7 @@ class Scene {
         
         view._rl_depth = depth
         //insert into array at proper position
-        this._spliceIntoOrder(view, this._viewArr)
+        rlindexInsert(view, this._viewArr)
         
         //add the ability to delete this view
         view.remove = (function() {
@@ -401,11 +530,7 @@ class Scene {
         this._viewArr.splice(view._rl_index, 1)
         view._rl_depth = depth
         //reinsert
-        this._spliceIntoOrder(view, this._viewArr)
-    }
-    
-    getViewDepth(name) {
-        return view._rl_depth
+        rlindexInsert(view, this._viewArr)
     }
     
     //drawable actions
@@ -419,7 +544,7 @@ class Scene {
         
         drawable._rl_depth = depth
         //insert into array at proper position
-        this._spliceIntoOrder(drawable, this._drawableArr)
+        rlindexInsert(drawable, this._drawableArr)
         
         //add the ability to delete this drawable
         drawable.remove = (function() {
@@ -456,29 +581,7 @@ class Scene {
         this._drawableArr.splice(drawable._rl_index, 1)
         drawable._rl_depth = depth
         //reinsert
-        this._spliceIntoOrder(drawable, this._drawableArr)
-    }
-    
-    getDrawableDepth(name) {
-        return drawable._rl_depth
-    }
-    
-    _spliceIntoOrder(object, arr) {
-        var low = 0,
-            high = arr.length
-
-        while (low < high) {
-            var mid = (low + high) >>> 1
-            if (arr[mid]._rl_depth < object._rl_depth) low = mid + 1
-            else high = mid
-        }
-        
-        object._rl_index = low
-        arr.splice(low, 0, object)
-        //update index counter of sprites being pushed up by insertion
-        for (let i = low+1; i < arr.length; i++) {
-            arr[i]._rl_index++
-        }
+        rlindexInsert(drawable, this._drawableArr)
     }
 }
 
@@ -699,7 +802,7 @@ class Input {
         el.addEventListener('touchstart', e=>{
             e.preventDefault()
             this._el.focus()
-            const touches = this._processTouches(e.changedTouches)
+            this.touches = this._processTouches(e.touches)
             
             this._touchEvents.start.forEach(o=>{
                 if (o.id!==undefined) {
