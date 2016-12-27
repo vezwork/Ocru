@@ -242,6 +242,12 @@ class SceneManager {
         
         this.canvas = canvas
         this.ctxt = canvas.getContext("2d")
+        
+        const c = document.createElement("canvas")
+        c.width = canvas.width
+        c.height = canvas.height
+        this._osCtx = c.getContext("2d")
+        
         this.fpscap = fpscap|0
         
         this.debug = {
@@ -256,7 +262,7 @@ class SceneManager {
             throw new TypeError("Parametererror: scene required!")
         
         this.scene = scene
-        scene.setSize(this.canvas.width, this.canvas.height)
+        scene._setOffscreenContext(this._osCtx)
         if (scene.play) scene.play()
         
         if (!this._running) {
@@ -367,23 +373,19 @@ class DrawableCollection extends Drawable {
     }
 }
 
-//could be extended to support rotation, height and width (clipping), smoothing, background color
-class SimpleLayer extends DrawableCollection {
-    constructor(x, y, width, height, rot, opacity, blendmode, osCtx) {
+//could be extended to support rotation, smoothing, background color
+class Layer extends DrawableCollection {
+    constructor(x, y, width, height, rot, opacity, blendmode) {
         super(x, y, width, height, rot, opacity, blendmode)
         
-        if (osCtx && osCtx instanceof CanvasRenderingContext2D) {
-            this._osCtx = osCtx
-            osCtx.width = width
-            osCtx.height = height
-        } else {
-            const c = document.createElement("canvas")
+        const c = document.createElement("canvas")
+        if (width)
             c.width = width
+        if (height)
             c.height = height
-            this._osCtx = c.getContext("2d")
-        }
+        this._osCtx = c.getContext("2d")
     }
-    
+
     draw(ctx) {
         this._osCtx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
         
@@ -407,6 +409,7 @@ class Group extends DrawableCollection {
     
     draw(ctx) {
         //cant use ctx.save() because it is overwritten by the drawables in the group
+        ctx.save()
         ctx.translate(this.x, this.y)
         ctx.rotate(this.rot)
         ctx.rotate(this.rot)
@@ -415,9 +418,10 @@ class Group extends DrawableCollection {
         for (let i = 0; i < this._drawableArr.length; i++)
             this._drawableArr[i].draw(ctx)
         
-        ctx.setTransform(1,1,1,1,0,0);
+        ctx.restore()
     }
 }
+
 
 //Scene
 //  manages Drawables and Views, controls view activation order, virtual canvas layering, sprite depth, other sprite meta information, has one default view
@@ -426,10 +430,10 @@ class Scene {
         if (!hooks)
             throw new TypeError("Parametererror: hooks required!")
         
-        this._osCanvas = document.createElement("canvas")
-        this._osCanvas.width = width || 100
-        this._osCanvas.height = height || 100
-        this._osCtx = this._osCanvas.getContext("2d")
+        const c = document.createElement("canvas")
+        c.width = width || 100
+        c.height = height || 100
+        this._osCtx = c.getContext("2d")
         
         this._drawableArr = []
         
@@ -451,16 +455,15 @@ class Scene {
         
         this.stop = hooks.stop
         
-        this.default_view = new SimpleView(this._osCanvas.width, this._osCanvas.height)
+        this.default_view = new SimpleView(this._osCtx.canvas.width, this._osCtx.canvas.height)
         this.addView(this.default_view)
     }
     
-    setSize(width, height) {
-        this._osCanvas.width = width || 100
-        this._osCanvas.height = height || 100
+    _setOffscreenContext(osCtx) {
+        this._osCtx = osCtx
         if (this.default_view) {
-            this.default_view.dwidth = width || 100
-            this.default_view.dheight = height || 100
+            this.default_view.dwidth = osCtx.canvas.width || 100
+            this.default_view.dheight = osCtx.canvas.height || 100
         }  
     }
     
@@ -468,12 +471,12 @@ class Scene {
         if (this.renderStart)
             this.renderStart()
         
-        ctx.clearRect(0, 0, this._osCanvas.width, this._osCanvas.height)
+        ctx.clearRect(0, 0, this._osCtx.canvas.width, this._osCtx.canvas.height)
         for (let i = 0; i < this._viewArr.length; i++) {
-            this._osCtx.clearRect(0, 0, this._osCanvas.width, this._osCanvas.height)
+            this._osCtx.clearRect(0, 0, this._osCtx.canvas.width, this._osCtx.canvas.height)
             this._viewArr[i].drawView(this._osCtx, this._drawableArr)
             //potential optimization on this line:
-            ctx.drawImage(this._osCanvas, 0, 0)
+            ctx.drawImage(this._osCtx.canvas, 0, 0)
         }
         
         if (this.renderEnd)
