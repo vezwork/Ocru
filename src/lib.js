@@ -11,10 +11,10 @@
         //unit testing
         //docs
         //promo
-        //optimization
+        //...
+        //last: optimization
     
     //FUTURE:
-        //some sort of groups
         //spritesheet animations
         //animation timelining
         //view attached drawables (ui elements)
@@ -23,8 +23,31 @@
         //tiling sprite drawable
         //clean up input (can be reduced to like half the code and more readable)
         //test touch and tilt on a real device
+        //test Group and Layer more extensively
+        //implement headless layer to work with a new type of layer so scene can have a layer
 
 "use strict"
+
+//Game class mixin
+function EventDrawable(Base) {
+    if (!(Base.prototype instanceof Drawable))
+        throw new TypeError("Base must inherit from Drawable")
+    
+    return class extends Base {
+        constructor() {
+            super(...arguments)
+            if (this.onCreate) this.onCreate()
+            
+            if (this.onDraw) {
+                const temp = this.draw
+                this.draw = function(...args) {
+                    this.onDraw()
+                    temp.bind(this)(...args)
+                }
+            }
+        }
+    }
+}
 
 //Drawable interface
 class Drawable {
@@ -41,10 +64,10 @@ class Drawable {
         
         this.blendmode = blendmode+''
     }
-    draw(ctx) {
+    prepare(ctx) {
         //handle opacity
         ctx.globalAlpha = this.opacity
-        ctx.globalCompositeOperation = this.blendmode;
+        ctx.globalCompositeOperation = this.blendmode
         
         const centerOffsetWidth = this.x+this.width/2|0
         const centerOffsetHeight = this.y+this.height/2|0
@@ -66,7 +89,7 @@ class Rectangle extends Drawable {
     
     draw(ctx) {
         ctx.save()
-        super.draw(ctx)
+        super.prepare(ctx)
         ctx.fillStyle = this.color
         
         ctx.fillRect(this.x|0,this.y|0,this.width|0,this.height|0)
@@ -85,7 +108,7 @@ class SimpleText extends Drawable {
     
     draw(ctx) {
         ctx.save()
-        super.draw(ctx)
+        super.prepare(ctx)
         
         ctx.font = this.height + "px " + this.font
         ctx.fillStyle = this.color
@@ -123,14 +146,14 @@ class Sprite extends Drawable {
     
     _imageDraw(ctx) {
         ctx.save()
-        super.draw(ctx)
+        super.prepare(ctx)
         ctx.drawImage(this.image, this.x|0, this.y|0, this.width|0, this.height|0)
         ctx.restore()
     }
     
     _sheetDraw(ctx) { //draw a SpriteSheet
         ctx.save()
-        super.draw(ctx)
+        super.prepare(ctx)
         ctx.drawImage(this.spriteSheet.image, 
                       this.spriteSheet.getFrameX(this.subimage)|0, 
                       this.spriteSheet.getFrameY(this.subimage)|0, 
@@ -263,7 +286,7 @@ class SceneManager {
         
         this.scene = scene
         scene._setOffscreenContext(this._osCtx)
-        if (scene.play) scene.play()
+        if (scene.onPlay) scene.onPlay()
         
         if (!this._running) {
             this._running = true
@@ -272,7 +295,7 @@ class SceneManager {
     }
     
     stop() {
-        if (scene.stop) scene.stop()
+        if (scene.onStop) scene.onStop()
         
         this._running = false
     }
@@ -393,7 +416,7 @@ class Layer extends DrawableCollection {
             this._drawableArr[i].draw(this._osCtx)
         
         ctx.save()
-        super.draw(ctx)
+        super.prepare(ctx)
         ctx.drawImage(this._osCtx.canvas, this.x, this.y)
         ctx.restore()
     }
@@ -408,12 +431,12 @@ class Group extends DrawableCollection {
     }
     
     draw(ctx) {
-        //cant use ctx.save() because it is overwritten by the drawables in the group
         ctx.save()
+        super.prepare(ctx)
         ctx.translate(this.x, this.y)
-        ctx.rotate(this.rot)
-        ctx.rotate(this.rot)
-        ctx.scale(this.scaleX,this.scaleY)
+        //ctx.rotate(this.rot)
+        //ctx.rotate(this.rot)
+        //ctx.scale(this.scaleX,this.scaleY)
         
         for (let i = 0; i < this._drawableArr.length; i++)
             this._drawableArr[i].draw(ctx)
@@ -423,12 +446,64 @@ class Group extends DrawableCollection {
 }
 
 
+function EventScene(Base) {
+    if (!(Base.prototype instanceof Scene) && Base != Scene)
+        throw new TypeError("Base must be a Scene")
+    
+    return class extends Base {
+        constructor() {
+            super(...arguments)
+            if (this.onCreate) 
+                this.onCreate()
+        }
+        
+        drawScene() {
+            if (this.onDrawStart) 
+                this.onDrawStart()
+            super.drawScene(...arguments)
+            if (this.onDrawEnd) 
+                this.onDrawEnd()
+        }
+    }
+}
+
+function LoadEventScene(Base) {
+    if (!(Base.prototype instanceof Scene) && Base != Scene)
+        throw new TypeError("Base must be a Scene")
+    
+    return class extends Base {
+        constructor() {
+            super(...arguments)
+            
+            this._activeDrawStart = this.onLoadDrawStart
+            this._activeDrawEnd = this.onLoadDrawEnd
+            
+            this.load = new MediaLoader()
+            this.load.onComplete(() => {
+                this._activeDrawStart = this.onDrawStart
+                this._activeDrawEnd = this.onDrawEnd
+                this.onReady()
+            })
+            
+            if (this.onCreate) 
+                this.onCreate()
+            this.load.start()
+        }
+        
+        drawScene() {
+            if (this._activeDrawStart) 
+                this._activeDrawStart()
+            super.drawScene(...arguments)
+            if (this._activeDrawEnd) 
+                this._activeDrawEnd()
+        }
+    }
+}
+
 //Scene
 //  manages Drawables and Views, controls view activation order, virtual canvas layering, sprite depth, other sprite meta information, has one default view
 class Scene {
-    constructor(hooks, width, height) {
-        if (!hooks)
-            throw new TypeError("Parametererror: hooks required!")
+    constructor(width, height) {
         
         const c = document.createElement("canvas")
         c.width = width || 100
@@ -438,22 +513,6 @@ class Scene {
         this._drawableArr = []
         
         this._viewArr = []
-        
-        //main hooks
-        if (hooks.create) {
-            this.play = function() {
-                hooks.create.bind(this)()
-                if (hooks.play) hooks.play.bind(this)()
-                this.play = hooks.play
-            }
-        } else {
-            this.play = hooks.play
-        }
-        
-        this.renderStart = hooks.renderStart || hooks.render
-        this.renderEnd = hooks.renderEnd
-        
-        this.stop = hooks.stop
         
         this.default_view = new SimpleView(this._osCtx.canvas.width, this._osCtx.canvas.height)
         this.addView(this.default_view)
@@ -468,19 +527,19 @@ class Scene {
     }
     
     drawScene(ctx) {
-        if (this.renderStart)
-            this.renderStart()
-        
         ctx.clearRect(0, 0, this._osCtx.canvas.width, this._osCtx.canvas.height)
+        
+        for (let i = 0; i < this._drawableArr.length; i++) {
+            if (this._drawableArr[i].onFrame)
+                this._drawableArr[i].onFrame()
+        }
+        
         for (let i = 0; i < this._viewArr.length; i++) {
             this._osCtx.clearRect(0, 0, this._osCtx.canvas.width, this._osCtx.canvas.height)
             this._viewArr[i].drawView(this._osCtx, this._drawableArr)
             //potential optimization on this line:
             ctx.drawImage(this._osCtx.canvas, 0, 0)
         }
-        
-        if (this.renderEnd)
-            this.renderEnd()
     }
     
     //view actions
@@ -585,31 +644,6 @@ class Scene {
         drawable._rl_depth = depth
         //reinsert
         rlindexInsert(drawable, this._drawableArr)
-    }
-}
-
-//hack
-class SceneWithLoader extends Scene {
-    constructor(hooks, width, height) {
-        
-        const create = hooks.create 
-        const renderStart = hooks.renderStart || hooks.render
-        const renderEnd = hooks.renderEnd
-        hooks.renderStart = hooks.loadRenderStart || hooks.loadRender
-        hooks.renderEnd = hooks.loadRenderEnd
-        
-        hooks.create = () => {
-            hooks.preload.bind(this)()
-            this.load.start()
-        }
-        super(hooks, width, height)
-        
-        this.load = new MediaLoader()
-        this.load.onComplete(() => {
-            this.renderStart = renderStart
-            this.renderEnd = renderEnd
-            create.bind(this)();
-        })
     }
 }
 
