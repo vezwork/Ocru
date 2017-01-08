@@ -21,8 +21,7 @@
 
     //DOABLE:
         //tiling sprite drawable, multiline text
-        //center of rotation for all drawables
-        //scene / drawable associated input listeners / pressed and unpressed boolean checks
+        //extend pressed/released input to touch
         //clean up input (can be reduced to like half the code and more readable)
         //test touch and tilt on a real device
         //test Group and Layer more extensively
@@ -319,6 +318,19 @@ class SceneManager {
             this.scene.drawScene(this.ctxt)
             this.debug._framesThisSecond++
         }
+    }
+}
+
+class Crux extends SceneManager {
+    constructor(canvas, fpscap) {
+        super(canvas, fpscap)
+        
+        this.input = new Input(canvas)
+    }
+    
+    _loop() {
+        super._loop()
+        this.input.resetPressedAndReleased()
     }
 }
 
@@ -762,6 +774,7 @@ class Input {
         this.keysDown = {}
         this.buttonsDown = {}
         this.mouse = { x: 0, y:0 }
+        this.resetPressedAndReleased()
         
         this.tilt = { abs: false, z:0, x:0, y:0 }
         
@@ -804,6 +817,7 @@ class Input {
             e.preventDefault()
             this._el.focus()
             this.buttonsDown[e.button] = true
+            this.buttonsPressed[e.button] = true
             this._mouseEvents.down.forEach(o=>{
                 if (o.button!==undefined) {
                     if (o.button==e.button) 
@@ -816,6 +830,7 @@ class Input {
         el.addEventListener('mouseup', e=>{
             e.preventDefault()
             this.buttonsDown[e.button] = false
+            this.buttonsReleased[e.button] = true
             this._mouseEvents.up.forEach(o=>{
                 if (o.button!==undefined) {
                     if (o.button==e.button) 
@@ -834,6 +849,7 @@ class Input {
         el.addEventListener('keydown', e=>{
             if (!this.keysDown[e.key.toLowerCase()]) {
                 e.preventDefault()
+                this.keysPressed[e.key.toLowerCase()] = true
                 this.keysDown[e.key.toLowerCase()] = true
                 this._keyEvents.down.forEach(o=>{
                     if (o.key!==undefined) {
@@ -846,6 +862,7 @@ class Input {
             }
         })
         el.addEventListener('keyup', e=>{
+            this.keysReleased[e.key.toLowerCase()] = true
             e.preventDefault()
             this.keysDown[e.key.toLowerCase()] = false
             this._keyEvents.up.forEach(o=>{
@@ -1023,15 +1040,37 @@ class Input {
         this._touchEvents[eventName].splice(find,1);
     }
     
-    checkKey(key) {
+    keyDown(key) {
         return (this.keysDown[key.toLowerCase()])?true:false
     }
     
-    checkButton(button) {
+    buttonDown(button) {
         if (typeof button == 'string')
             button = this._stringToMouseCode(button)
         
         return (this.buttonsDown[button])?true:false
+    }
+    
+    keyPressed(key) {
+        return (this.keysPressed[key.toLowerCase()])?true:false
+    }
+    
+    keyReleased(key) {
+        return (this.keysReleased[key.toLowerCase()])?true:false
+    }
+    
+    buttonPressed(button) {
+        if (typeof button == 'string')
+            button = this._stringToMouseCode(button)
+        
+        return (this.buttonsPressed[button])?true:false
+    }
+    
+    buttonReleased(button) {
+        if (typeof button == 'string')
+            button = this._stringToMouseCode(button)
+        
+        return (this.buttonsReleased[button])?true:false
     }
     
     _stringToMouseCode(str) {
@@ -1040,5 +1079,12 @@ class Input {
             case 'middle': return 1
             case 'right': return 2
         }
+    }
+    
+    resetPressedAndReleased() {
+        this.keysPressed = {}
+        this.keysReleased = {}
+        this.buttonsPressed = {}
+        this.buttonsReleased = {}
     }
 }
