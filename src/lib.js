@@ -20,11 +20,12 @@
         //view attached drawables (ui elements)
 
     //DOABLE:
-        //tiling sprite drawable
+        //tiling sprite drawable, multiline text
+        //center of rotation for all drawables
+        //scene / drawable associated input listeners / pressed and unpressed boolean checks
         //clean up input (can be reduced to like half the code and more readable)
         //test touch and tilt on a real device
         //test Group and Layer more extensively
-        //implement headless layer to work with a new type of layer so scene can have a layer
 
 "use strict"
 
@@ -63,14 +64,17 @@ class Drawable {
         this.scaleY = 1
         
         this.blendmode = blendmode+''
+        
+        this.origin = { x: undefined, y: undefined }
     }
     prepare(ctx) {
         //handle opacity
         ctx.globalAlpha = this.opacity
         ctx.globalCompositeOperation = this.blendmode
         
-        const centerOffsetWidth = this.x+this.width/2|0
-        const centerOffsetHeight = this.y+this.height/2|0
+        const centerOffsetWidth  = this.x + ((this.origin.x !== undefined)? this.origin.x : this.width/2)|0
+        const centerOffsetHeight = this.y + ((this.origin.y !== undefined)? this.origin.y : this.height/2)|0
+        
         //scaling
         ctx.translate(centerOffsetWidth, centerOffsetHeight)
         //rotation
@@ -286,7 +290,7 @@ class SceneManager {
         
         this.scene = scene
         scene._setOffscreenContext(this._osCtx)
-        if (scene.onPlay) scene.onPlay()
+        scene._onPlay()
         
         if (!this._running) {
             this._running = true
@@ -295,7 +299,7 @@ class SceneManager {
     }
     
     stop() {
-        if (scene.onStop) scene.onStop()
+        scene._onStop()
         
         this._running = false
     }
@@ -645,6 +649,24 @@ class Scene {
         //reinsert
         rlindexInsert(drawable, this._drawableArr)
     }
+    
+    _onPlay() {
+        if (this.onPlay)
+            this.onPlay()
+        for (let i = 0; i < this._drawableArr.length; i++) {
+            if (this._drawableArr[i].onPlay)
+                this._drawableArr[i].onPlay()
+        }
+    }
+    
+    _onStop() {
+        if (this.onStop)
+            this.onStop()
+        for (let i = 0; i < this._drawableArr.length; i++) {
+            if (this._drawableArr[i].onStop)
+                this._drawableArr[i].onStop()
+        }
+    }
 }
 
 //IDEA: use es6 proxies to make a LazyRenderer class (useful for performance on things with a low change rate)
@@ -739,7 +761,7 @@ class Input {
         //input state
         this.keysDown = {}
         this.buttonsDown = {}
-        this.mousePos = { x: 0, y:0 }
+        this.mouse = { x: 0, y:0 }
         
         this.tilt = { abs: false, z:0, x:0, y:0 }
         
@@ -805,8 +827,8 @@ class Input {
         })
         el.addEventListener('mousemove', e=>{
             const {left, top} = this._el.getBoundingClientRect()
-            this.mousePos.x = e.clientX - left
-            this.mousePos.y = e.clientY - top
+            this.mouse.x = e.clientX - left
+            this.mouse.y = e.clientY - top
         })
         
         el.addEventListener('keydown', e=>{
