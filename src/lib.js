@@ -59,8 +59,7 @@ class Drawable {
         this.rot = +rot
         this.opacity = +opacity
         
-        this.scaleX = 1
-        this.scaleY = 1
+        this.scale = { x: 1, y: 1 }
         
         this.blendmode = blendmode+''
         
@@ -78,7 +77,7 @@ class Drawable {
         ctx.translate(centerOffsetWidth, centerOffsetHeight)
         //rotation
         ctx.rotate(this.rot)
-        ctx.scale(this.scaleX,this.scaleY)
+        ctx.scale(this.scale.x,this.scale.y)
         ctx.translate(-centerOffsetWidth, -centerOffsetHeight)
         //the subclass must handle using x,y,width,height and must restore the ctx
     }
@@ -442,8 +441,8 @@ class Group extends DrawableCollection {
     constructor(x, y, rot, scaleX=1, scaleY=1) {
         super(x, y, 0, 0, rot)
         
-        this.scaleX = scaleX
-        this.scaleY = scaleY
+        this.scale.x = scaleX
+        this.scale.y = scaleY
     }
     
     draw(ctx) {
