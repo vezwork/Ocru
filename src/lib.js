@@ -313,10 +313,12 @@ class SceneManager {
             this.debug._framesThisSecond = 0
         }
         //limit fps
-        if (this.fpscap==60 || this.debug._framesThisSecond < (window.performance.now() - this.debug._lastSecond) / 1000 * this.fpscap) {
+        const drawCondition = this.debug._framesThisSecond < (window.performance.now() - this.debug._lastSecond) / 1000 * this.fpscap
+        if (drawCondition) {
             this.scene.drawScene(this.ctxt)
             this.debug._framesThisSecond++
         }
+        return drawCondition
     }
 }
 
@@ -328,8 +330,8 @@ class Crux extends SceneManager {
     }
     
     _loop() {
-        super._loop()
-        this.input.resetPressedAndReleased()
+        if (super._loop())
+            this.input.resetPressedAndReleased()
     }
 }
 
@@ -387,6 +389,9 @@ const DrawableCollectionMixin = Base => class extends Base {
         //schedule removal from array
         this._resolutionQueue.push(()=>{
             this._drawableArr.splice(drawable._rl_index, 1)
+            for(let i = drawable._rl_index; i < this._drawableArr.length; i++) 
+                this._drawableArr[i]._rl_index--
+            
             delete drawable._rl_index
             delete drawable.parent
         })
@@ -396,6 +401,8 @@ const DrawableCollectionMixin = Base => class extends Base {
         //schedule removal from array
         this._resolutionQueue.push(()=>{
             this._drawableArr.splice(drawable._rl_index, 1)
+            for(let i = drawable._rl_index; i < this._drawableArr.length; i++) 
+                this._drawableArr[i]._rl_index--
         })
         drawable._rl_depth = depth
         
