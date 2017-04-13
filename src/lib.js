@@ -20,11 +20,16 @@
         //view attached drawables (ui elements)
 
     //DOABLE:
-        //tiling sprite drawable, multiline text
+        //tiling sprite drawable (i.e. ctx pattern), multiline text
+        //text autowidthing option
+        //add e.disableNormalEvents or whatever its called to nontouch mode on touch devices in input  (i.e. cant scroll by moving finger across game)
+        //smoothing on all drawables
+        //sfx: sound.play multiple times concurrently
         //extend pressed/released input to touch
         //clean up input (can be reduced to like half the code and more readable)
         //test touch and tilt on a real device
         //test Group and Layer more extensively
+        //fix input when game is unfocused mid input
 
 "use strict"
 
@@ -34,9 +39,9 @@ function EventDrawable(Base) {
         throw new TypeError("Base must inherit from Drawable")
     
     return class extends Base {
-        constructor() {
-            super(...arguments)
-            if (this.onCreate) this.onCreate()
+        constructor(opts) {
+            super(opts)
+            if (this.onCreate) this.onCreate(opts.create)
             
             if (this.onDraw) {
                 const temp = this.draw
@@ -51,19 +56,30 @@ function EventDrawable(Base) {
 
 //Drawable interface
 class Drawable {
-    constructor(x=0, y=0, width=0, height=0, rot=0, opacity=1, blendmode='source-over') {
+    constructor({
+                x = 0, 
+                y = 0, 
+                width = 0, 
+                height = 0, 
+                rot = 0, 
+                opacity = 1, 
+                blendmode = 'source-over', 
+                scale = { x: 1, y: 1 }, 
+                origin = { x: undefined, y: undefined }
+            } = {}) {
+            
         this.x = x|0
         this.y = y|0
         this.width = width|0
         this.height = height|0
+        
         this.rot = +rot
         this.opacity = +opacity
         
-        this.scale = { x: 1, y: 1 }
-        
         this.blendmode = blendmode+''
         
-        this.origin = { x: undefined, y: undefined }
+        this.scale = scale
+        this.origin = origin
     }
     prepare(ctx) {
         //handle opacity
@@ -81,11 +97,15 @@ class Drawable {
         ctx.translate(-centerOffsetWidth, -centerOffsetHeight)
         //the subclass must handle using x,y,width,height and must restore the ctx
     }
+    
+    static events() {
+        return EventDrawable(this)
+    }
 }
 
 class Rectangle extends Drawable {
-    constructor(x, y, width, height, rot, opacity, color='black') {
-        super(x, y, width, height, rot, opacity)
+    constructor({ color = 'black' } = {}) {
+        super(arguments[0])
         this.color = color+''
     }
     
@@ -99,9 +119,12 @@ class Rectangle extends Drawable {
     }
 }
 
-class SimpleText extends Drawable {
-    constructor(text='', x, y, width=100000, height=14, color='#000', font='arial', rot, opacity) {
-        super(x, y, width, height, rot, opacity)
+class TextLine extends Drawable {
+    constructor({text='', color='#000', font='arial'}) {
+        const opts = arguments[0]
+        if (opts.width === undefined) opts.width = 100000
+        if (opts.height === undefined) opts.height = 14
+        super(opts)
         
         this.text = text+''
         this.font = font+''
@@ -122,20 +145,26 @@ class SimpleText extends Drawable {
 } 
 
 class Sprite extends Drawable {
-    constructor(image, x, y, width, height, rot, opacity) {
+    constructor({ image, crop={ x: 0, y: 0, height: undefined, width: undefined }}) {
+        
+        const opts = arguments[0]
         
         if (image instanceof Image) {
             if (image.naturalHeight == 0)
                 throw new TypeError("ParameterError: image is an Image but has no source or hasn't loaded yet!")
             
-            super(x, y, width || image.naturalWidth, height || image.naturalHeight, rot, opacity)
+            if (opts.width === undefined) opts.width = image.naturalWidth
+            if (opts.height === undefined) opts.height = image.naturalHeight
+            super(opts)
             
             this.image = image
             this.draw = this._imageDraw
             
         } else if (image instanceof Sprite.Sheet) {
             
-            super(x, y, width || image.subimageWidth, height || image.subimageHeight, rot, opacity)
+            if (opts.width === undefined) opts.width = image.subimageWidth
+            if (opts.height === undefined) opts.height = image.subimageHeight
+            super(opts)
             
             this.spriteSheet = image
             this.subimage = 0
@@ -144,12 +173,23 @@ class Sprite extends Drawable {
         } else {
             throw new TypeError("ParameterError: image must be an Image or SpriteSheet object!")
         }
+        
+        this.crop = crop
     }
     
     _imageDraw(ctx) {
         ctx.save()
         super.prepare(ctx)
-        ctx.drawImage(this.image, this.x|0, this.y|0, this.width|0, this.height|0)
+        ctx.drawImage(this.image, 
+                      this.crop.x|0,
+                      this.crop.y|0,
+                      (this.crop.width===undefined)?this.width:this.crop.width|0,
+                      (this.crop.height===undefined)?this.height:this.crop.height|0,
+                      this.x|0,
+                      this.y|0, 
+                      (this.crop.width===undefined)?this.width:this.crop.width|0, 
+                      (this.crop.height===undefined)?this.height:this.crop.height|0
+                     )
         ctx.restore()
     }
     
@@ -157,21 +197,21 @@ class Sprite extends Drawable {
         ctx.save()
         super.prepare(ctx)
         ctx.drawImage(this.spriteSheet.image, 
-                      this.spriteSheet.getFrameX(this.subimage)|0, 
-                      this.spriteSheet.getFrameY(this.subimage)|0, 
-                      this.spriteSheet.subimageWidth|0,
-                      this.spriteSheet.subimageHeight|0,
+                      this.spriteSheet.getFrameX(this.subimage)+this.crop.x|0, 
+                      this.spriteSheet.getFrameY(this.subimage)+this.crop.y|0, 
+                      (this.crop.width===undefined)?this.spriteSheet.width:this.crop.width|0,
+                      (this.crop.height===undefined)?this.spriteSheet.height:this.crop.height|0,
                       this.x|0, 
                       this.y|0, 
-                      this.width|0, 
-                      this.height|0
+                      (this.crop.width===undefined)?this.spriteSheet.width:this.crop.width|0,
+                      (this.crop.height===undefined)?this.spriteSheet.height:this.crop.height|0
                      )
         ctx.restore()
     }
 }
 
 Sprite.Sheet = class {
-    constructor(image, subimageWidth, subimageHeight, subimageCount) {
+    constructor(image, width, height, subimageCount) {
     
         if (!(image instanceof Image)) 
             throw new TypeError("ParameterError: image must be an Image or SpriteSheet object!")
@@ -183,21 +223,20 @@ Sprite.Sheet = class {
             throw new TypeError("ParameterError: image is an Image but has no source or hasn't loaded yet!")
         
         this.image = image
-        this.subimageHeight = subimageHeight|0
-        this.subimageWidth = subimageWidth|0
+        this.height = height|0
+        this.width = width|0
         
-        this._imagesPerRow = (image.naturalWidth / subimageWidth|0)
-        this._imagesPerColumn = (image.naturalHeight / subimageHeight|0)
+        this._imagesPerRow = (image.naturalWidth / width|0)
+        this._imagesPerColumn = (image.naturalHeight / height|0)
         //this.subimageCount = subimageCount|0 || this._imagesPerColumn * this._imagesPerRow
     }
     
     getFrameX(subimage) {
-        return ((subimage % this._imagesPerRow) % this._imagesPerRow) * this.subimageWidth
+        return ((subimage % this._imagesPerRow) % this._imagesPerRow) * this.width
     }
     
     getFrameY(subimage) {
-        
-        return ((subimage / this._imagesPerRow |0) % this._imagesPerColumn) * this.subimageHeight
+        return ((subimage / this._imagesPerRow |0) % this._imagesPerColumn) * this.height
     } 
 }
 
@@ -211,10 +250,10 @@ class View {
 //  has viewStart and viewEnd callbacks
 class SimpleView extends View {
     //TODO: A version of View with this signature: constructor(dwidth=100, dheight=100, dx=0, dy=0, drot=0, sx=0, sy=0, zoomX=1, zoomY=1, srot=0)
-    constructor(dwidth=100, dheight=100, dx=0, dy=0, sx=0, sy=0, zoomX=1, zoomY=1, backgroundColor, smooth=true) {
+    constructor({width=100, height=100, dx=0, dy=0, sx=0, sy=0, zoomX=1, zoomY=1, backgroundColor, smooth=true}) {
         super()
-        this.dwidth=dwidth|0
-        this.dheight=dheight|0
+        this.width=width|0
+        this.height=height|0
         this.dx=dx|0
         this.dy=dy|0
         
@@ -254,9 +293,9 @@ class SimpleView extends View {
         ctx.restore()
         
         ctx.clearRect(this.dx, 0, ctx.canvas.width, this.dy)
-        ctx.clearRect(this.dx+this.dwidth, this.dy, ctx.canvas.width, ctx.canvas.height)
-        ctx.clearRect(0, this.dy+this.dheight, this.dx+this.dwidth, ctx.canvas.height)
-        ctx.clearRect(0, 0, this.dx, this.dy+this.dheight)
+        ctx.clearRect(this.dx+this.width, this.dy, ctx.canvas.width, ctx.canvas.height)
+        ctx.clearRect(0, this.dy+this.height, this.dx+this.width, ctx.canvas.height)
+        ctx.clearRect(0, 0, this.dx, this.dy+this.height)
     }
 }
 
@@ -313,7 +352,7 @@ class SceneManager {
             this.debug._framesThisSecond = 0
         }
         //limit fps
-        const drawCondition = this.debug._framesThisSecond < (window.performance.now() - this.debug._lastSecond) / 1000 * this.fpscap
+        const drawCondition = this.debug._framesThisSecond - 1 < (window.performance.now() - this.debug._lastSecond) / 1000 * this.fpscap
         if (drawCondition) {
             this.scene.drawScene(this.ctxt)
             this.debug._framesThisSecond++
@@ -322,7 +361,7 @@ class SceneManager {
     }
 }
 
-class Crux extends SceneManager {
+class Ocru extends SceneManager {
     constructor(canvas, fpscap) {
         super(canvas, fpscap)
         
@@ -439,8 +478,8 @@ const DrawableCollectionMixin = Base => class extends Base {
 
 //could be extended to support rotation, smoothing, background color
 class Layer extends DrawableCollectionMixin(Drawable) {
-    constructor(x, y, width, height, rot, opacity, blendmode) {
-        super(x, y, width, height, rot, opacity, blendmode)
+    constructor({ width, height }) {
+        super(arguments[0])
         
         const c = document.createElement("canvas")
         if (width)
@@ -466,11 +505,8 @@ class Layer extends DrawableCollectionMixin(Drawable) {
 }
 
 class Group extends DrawableCollectionMixin(Drawable) {
-    constructor(x, y, rot, scaleX=1, scaleY=1) {
-        super(x, y, 0, 0, rot)
-        
-        this.scale.x = scaleX
-        this.scale.y = scaleY
+    constructor(opts) {
+        super(opts)
     }
     
     draw(ctx) {
@@ -564,8 +600,8 @@ class Scene extends DrawableCollectionMixin(Object) {
     _setOffscreenContext(osCtx) {
         this._osCtx = osCtx
         if (this.default_view) {
-            this.default_view.dwidth = osCtx.canvas.width || 100
-            this.default_view.dheight = osCtx.canvas.height || 100
+            this.default_view.width = osCtx.canvas.width || 100
+            this.default_view.height = osCtx.canvas.height || 100
         }  
     }
     
@@ -740,7 +776,7 @@ class MediaLoader {
 }
 
 class Input {
-    constructor(el=document.body) {
+    constructor(el=document.body, mobile) {
         if (!((el instanceof HTMLElement) || (el instanceof HTMLDocument)))
             throw new TypeError("ParameterError: el must be a valid HTML element!")
         
@@ -777,16 +813,6 @@ class Input {
             end: []
         }
 
-        //tilt
-        window.addEventListener('deviceorientation', e=>{
-            this._tiltEvents.forEach(o=>o())
-            this.tilt = {
-                abs: e.absolute,
-                z: e.alpha,
-                x: e.beta,
-                y: e.gamma
-            }
-        })
         //mouse and keybaord
         //disable the context menu
         el.addEventListener('contextmenu', e=>e.preventDefault())
@@ -825,8 +851,8 @@ class Input {
         })
         
         el.addEventListener('keydown', e=>{
+            e.preventDefault()
             if (!this.keysDown[e.key.toLowerCase()]) {
-                e.preventDefault()
                 this.keysPressed[e.key.toLowerCase()] = true
                 this.keysDown[e.key.toLowerCase()] = true
                 this._keyEvents.down.forEach(o=>{
@@ -852,56 +878,68 @@ class Input {
                     o.func(e.key)
             })
         })
-        //touch
-        el.addEventListener('touchstart', e=>{
-            e.preventDefault()
-            this._el.focus()
-            this.touches = this._processTouches(e.touches)
+        if (mobile) {
+            //tilt
+            window.addEventListener('deviceorientation', e=>{
+                this._tiltEvents.forEach(o=>o())
+                this.tilt = {
+                    abs: e.absolute,
+                    z: e.alpha,
+                    x: e.beta,
+                    y: e.gamma
+                }
+            })
+            //touch
+            el.addEventListener('touchstart', e=>{
+                e.preventDefault()
+                this._el.focus()
+                this.touches = this._processTouches(e.touches)
+                
+                this._touchEvents.start.forEach(o=>{
+                    if (o.id!==undefined) {
+                        if (touches[o.id]!= undefined)
+                            o.func(touches)
+                    }
+                    else
+                        o.func(touches)
+                        
+                })
+            })
             
-            this._touchEvents.start.forEach(o=>{
-                if (o.id!==undefined) {
-                    if (touches[o.id]!= undefined)
-                        o.func(touches)
-                }
-                else
-                    o.func(touches)
-                    
+            el.addEventListener('touchmove', e=>{
+                e.preventDefault()
+                this.touches = this._processTouches(e.touches)
             })
-        })
-        
-        el.addEventListener('touchmove', e=>{
-            e.preventDefault()
-            this.touches = this._processTouches(e.touches)
-        })
-        
-        el.addEventListener('touchcancel', e=>{
-            e.preventDefault()
-            const touches = this._processTouches(e.changedTouches)
             
-            this._touchEvents.cancel.forEach(o=>{
-                if (o.id!==undefined) {
-                    if (touches[o.id]!= undefined)
+            el.addEventListener('touchcancel', e=>{
+                e.preventDefault()
+                const touches = this._processTouches(e.changedTouches)
+                
+                this._touchEvents.cancel.forEach(o=>{
+                    if (o.id!==undefined) {
+                        if (touches[o.id]!= undefined)
+                            o.func(touches)
+                    }
+                    else
                         o.func(touches)
-                }
-                else
-                    o.func(touches)
-                    
+                        
+                })
             })
-        })
-        
-        el.addEventListener('touchend', e=>{
-            e.preventDefault()
-            const touches = this._processTouches(e.changedTouches, true)
-            this._touchEvents.end.forEach(o=>{
-                if (o.id!==undefined) {
-                    if (touches[o.id]!= undefined)
+            
+            el.addEventListener('touchend', e=>{
+                e.preventDefault()
+                const touches = this._processTouches(e.changedTouches, true)
+                this._touchEvents.end.forEach(o=>{
+                    if (o.id!==undefined) {
+                        if (touches[o.id]!= undefined)
+                            o.func(touches)
+                    }
+                    else
                         o.func(touches)
-                }
-                else
-                    o.func(touches)
-                    
+                        
+                })
             })
-        })
+        }
     }
     
     _processTouches(touches, del) {
