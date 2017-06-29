@@ -13,11 +13,6 @@
         //promo
         //...
         //last: optimization
-    
-    //FUTURE:
-        //spritesheet animations
-        //animation timelining
-        //view attached drawables (ui elements)
 
     //DOABLE:
         //tiling sprite drawable (i.e. ctx pattern), multiline text
@@ -30,6 +25,9 @@
         //test touch and tilt on a real device
         //test Group and Layer more extensively
         //fix input when game is unfocused mid input
+        //spritesheet animations
+        //animation timelining
+        //view attached drawables (ui elements)
 
 "use strict"
 
@@ -98,7 +96,7 @@ class Drawable {
         //the subclass must handle using x,y,width,height and must restore the ctx
     }
     
-    static events() {
+    static Events() {
         return EventDrawable(this)
     }
 }
@@ -144,40 +142,68 @@ class TextLine extends Drawable {
     }
 } 
 
+//only supports spritesheets with subimages right next to eachother as of now
+class SpriteSheet extends Drawable {
+    constructor({ sheet={image, frameWidth, frameHeight, subimageCount}, crop={ x: 0, y: 0, height: undefined, width: undefined }}) {
+        const opts = arguments[0]
+
+        if (image.naturalHeight === 0)
+            throw new TypeError("ParameterError: image has no source or hasn't loaded yet!")
+
+        if (opts.width === undefined) opts.width = frameWidth
+        if (opts.height === undefined) opts.height = frameHeight
+        super(opts)
+        
+        this.spriteSheet = image
+        this.subimage = 0
+
+        this._imagesPerRow = (image.naturalWidth / width|0)
+        this._imagesPerColumn = (image.naturalHeight / height|0)
+        //this.subimageCount = subimageCount|0 || this._imagesPerColumn * this._imagesPerRow
+    }
+
+    draw(ctx) {
+        ctx.save()
+        super.prepare(ctx)
+        ctx.drawImage(this.image, 
+                      this._getFrameX(this.subimage)+this.crop.x|0, 
+                      this._getFrameY(this.subimage)+this.crop.y|0, 
+                      (this.crop.width===undefined)?this.width:this.crop.width|0,
+                      (this.crop.height===undefined)?this.height:this.crop.height|0,
+                      this.x|0, 
+                      this.y|0, 
+                      (this.crop.width===undefined)?this.width:this.crop.width|0,
+                      (this.crop.height===undefined)?this.height:this.crop.height|0
+                     )
+        ctx.restore()
+    }
+
+    _getFrameX(frameIndex) {
+        return ((frameIndex % this._imagesPerRow) % this._imagesPerRow) * this.width
+    }
+    
+    _getFrameY(frameIndex) {
+        return ((frameIndex / this._imagesPerRow |0) % this._imagesPerColumn) * this.height
+    } 
+}
+
 class Sprite extends Drawable {
     constructor({ image, crop={ x: 0, y: 0, height: undefined, width: undefined }}) {
-        
         const opts = arguments[0]
         
-        if (image instanceof Image) {
-            if (image.naturalHeight == 0)
-                throw new TypeError("ParameterError: image is an Image but has no source or hasn't loaded yet!")
-            
-            if (opts.width === undefined) opts.width = image.naturalWidth
-            if (opts.height === undefined) opts.height = image.naturalHeight
-            super(opts)
-            
-            this.image = image
-            this.draw = this._imageDraw
-            
-        } else if (image instanceof Sprite.Sheet) {
-            
-            if (opts.width === undefined) opts.width = image.subimageWidth
-            if (opts.height === undefined) opts.height = image.subimageHeight
-            super(opts)
-            
-            this.spriteSheet = image
-            this.subimage = 0
-            this.draw = this._sheetDraw
-            
-        } else {
-            throw new TypeError("ParameterError: image must be an Image or SpriteSheet object!")
-        }
+        if (image.naturalHeight === 0)
+            throw new TypeError("ParameterError: image has no source or hasn't loaded yet!")
         
+        if (opts.width === undefined) opts.width = image.naturalWidth
+        if (opts.height === undefined) opts.height = image.naturalHeight
+
+        super(opts)
+        
+        this.image = image
         this.crop = crop
     }
     
-    _imageDraw(ctx) {
+    draw(ctx) {
         ctx.save()
         super.prepare(ctx)
         ctx.drawImage(this.image, 
@@ -192,55 +218,7 @@ class Sprite extends Drawable {
                      )
         ctx.restore()
     }
-    
-    _sheetDraw(ctx) { //draw a SpriteSheet
-        ctx.save()
-        super.prepare(ctx)
-        ctx.drawImage(this.spriteSheet.image, 
-                      this.spriteSheet.getFrameX(this.subimage)+this.crop.x|0, 
-                      this.spriteSheet.getFrameY(this.subimage)+this.crop.y|0, 
-                      (this.crop.width===undefined)?this.spriteSheet.width:this.crop.width|0,
-                      (this.crop.height===undefined)?this.spriteSheet.height:this.crop.height|0,
-                      this.x|0, 
-                      this.y|0, 
-                      (this.crop.width===undefined)?this.spriteSheet.width:this.crop.width|0,
-                      (this.crop.height===undefined)?this.spriteSheet.height:this.crop.height|0
-                     )
-        ctx.restore()
-    }
 }
-
-Sprite.Sheet = class {
-    constructor(image, width, height, subimageCount) {
-    
-        if (!(image instanceof Image)) 
-            throw new TypeError("ParameterError: image must be an Image or SpriteSheet object!")
-        if (!subimageHeight) 
-            throw new TypeError("ParameterError: subimageHeight required!")
-        if (!subimageWidth) 
-            throw new TypeError("ParameterError: subimageWidth required!")
-        if (image.naturalHeight == 0)
-            throw new TypeError("ParameterError: image is an Image but has no source or hasn't loaded yet!")
-        
-        this.image = image
-        this.height = height|0
-        this.width = width|0
-        
-        this._imagesPerRow = (image.naturalWidth / width|0)
-        this._imagesPerColumn = (image.naturalHeight / height|0)
-        //this.subimageCount = subimageCount|0 || this._imagesPerColumn * this._imagesPerRow
-    }
-    
-    getFrameX(subimage) {
-        return ((subimage % this._imagesPerRow) % this._imagesPerRow) * this.width
-    }
-    
-    getFrameY(subimage) {
-        return ((subimage / this._imagesPerRow |0) % this._imagesPerColumn) * this.height
-    } 
-}
-
-//only supports spritesheets with subimages right next to eachother as of now
 
 class View {
     drawView(ctx, drawables) {}
@@ -547,6 +525,8 @@ function EventScene(Base) {
     }
 }
 
+
+
 function LoadEventScene(Base) {
     if (!(Base.prototype instanceof Scene) && Base != Scene)
         throw new TypeError("Base must be a Scene")
@@ -692,6 +672,10 @@ class Scene extends DrawableCollectionMixin(Object) {
             if (this._drawableArr[i].onStop)
                 this._drawableArr[i].onStop()
         }
+    }
+
+    static Events() {
+        return LoadEventScene(this)
     }
 }
 
