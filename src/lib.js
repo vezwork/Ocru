@@ -79,6 +79,7 @@ class Drawable {
         this.scale = scale
         this.origin = origin
     }
+
     prepare(ctx) {
         //handle opacity
         ctx.globalAlpha = this.opacity
@@ -93,7 +94,58 @@ class Drawable {
         ctx.rotate(this.rot)
         ctx.scale(this.scale.x,this.scale.y)
         ctx.translate(-centerOffsetWidth, -centerOffsetHeight)
-        //the subclass must handle using x,y,width,height and must restore the ctx
+        //the subclass must handle using x,y,width,height and must save & restore the ctx
+        ctx.fillStyle='blue'
+        ctx.fillRect(this.x,this.y,this.width,this.height)
+    }
+
+    touches(drawable) {
+        
+        const { x: tx, y: ty } = this.getCenter()
+        const { x: dx, y: dy } = drawable.getCenter()
+
+        const t = { x: dx - tx, y: dy - ty }
+
+        const myRotNormal = { x: Math.cos(this.rot), y: Math.sin(this.rot) },
+              myHWidth = this.scale.x*this.width/2,
+              myHHeight = this.scale.y*this.height/2
+
+        const coRotNormal = { x: Math.cos(drawable.rot), y: Math.sin(drawable.rot) },
+              coHWidth = drawable.scale.x*drawable.width/2,
+              coHHeight = drawable.scale.y*drawable.height/2
+
+        const r1 = Math.abs(t.x * myRotNormal.x + t.y * myRotNormal.y) > myHWidth +
+                 Math.abs(coHWidth * (coRotNormal.x * myRotNormal.x + coRotNormal.y * myRotNormal.y)) +
+                 Math.abs(coHHeight * (-coRotNormal.y * myRotNormal.x + coRotNormal.x * myRotNormal.y))
+        
+        const r2 = Math.abs(t.x * -myRotNormal.y + t.y * myRotNormal.x) > myHHeight +
+                 Math.abs(coHWidth * (coRotNormal.x * -myRotNormal.y + coRotNormal.y * myRotNormal.x)) +
+                 Math.abs(coHHeight * (-coRotNormal.y * -myRotNormal.y + coRotNormal.x * myRotNormal.x))    
+
+        const r3 = Math.abs(t.x * coRotNormal.x + t.y * coRotNormal.y) > coHWidth +
+                 Math.abs(myHWidth * (myRotNormal.x * coRotNormal.x + myRotNormal.y * coRotNormal.y)) +
+                 Math.abs(myHHeight * (-myRotNormal.y * coRotNormal.x + myRotNormal.x * coRotNormal.y))  
+
+        const r4 = Math.abs(t.x * -coRotNormal.y + t.y * coRotNormal.x) > coHHeight +
+                 Math.abs(myHWidth * (myRotNormal.x * -coRotNormal.y + myRotNormal.y * coRotNormal.x)) +
+                 Math.abs(myHHeight * (-myRotNormal.y * -coRotNormal.y + myRotNormal.x * coRotNormal.x))  
+
+        return !(r1 || r2 || r3 || r4)
+    }
+
+    getCenter() {
+        const centerOffsetWidth  = this.x + ((this.origin.x !== undefined)? this.origin.x : this.width/2)|0
+        const centerOffsetHeight = this.y + ((this.origin.y !== undefined)? this.origin.y : this.height/2)|0
+
+        const cosa = Math.cos(this.rot)
+        const sina = Math.sin(this.rot)
+        var centerX = (this.x + this.width/2 - centerOffsetWidth) * this.scale.x
+        var centerY = (this.y + this.height/2 - centerOffsetHeight) * this.scale.y
+
+        return { 
+                x: (centerX * cosa) - (centerY * sina) + centerOffsetWidth, 
+                y: (centerX * sina) + (centerY * cosa) + centerOffsetHeight
+               }
     }
     
     static Events() {
@@ -143,8 +195,11 @@ class TextLine extends Drawable {
 } 
 
 //only supports spritesheets with subimages right next to eachother as of now
+//unless you use crop to cut off spaces in the sheet
+
+//doesn't support sheets with less than the expected amount
 class SpriteSheet extends Drawable {
-    constructor({ sheet={image, frameWidth, frameHeight, subimageCount}, crop={ x: 0, y: 0, height: undefined, width: undefined }}) {
+    constructor({ sheet: {image, frameWidth, frameHeight, subimageCount}, crop={ x: 0, y: 0, height: frameHeight, width: frameWidth }}) {
         const opts = arguments[0]
 
         if (image.naturalHeight === 0)
@@ -154,11 +209,12 @@ class SpriteSheet extends Drawable {
         if (opts.height === undefined) opts.height = frameHeight
         super(opts)
         
-        this.spriteSheet = image
+        this.image = image
+        this.crop = crop
         this.subimage = 0
 
-        this._imagesPerRow = (image.naturalWidth / width|0)
-        this._imagesPerColumn = (image.naturalHeight / height|0)
+        this._imagesPerRow = (image.naturalWidth / frameWidth|0)
+        this._imagesPerColumn = (image.naturalHeight / frameHeight|0)
         //this.subimageCount = subimageCount|0 || this._imagesPerColumn * this._imagesPerRow
     }
 
@@ -168,12 +224,12 @@ class SpriteSheet extends Drawable {
         ctx.drawImage(this.image, 
                       this._getFrameX(this.subimage)+this.crop.x|0, 
                       this._getFrameY(this.subimage)+this.crop.y|0, 
-                      (this.crop.width===undefined)?this.width:this.crop.width|0,
-                      (this.crop.height===undefined)?this.height:this.crop.height|0,
+                      this.crop.width|0,
+                      this.crop.height|0,
                       this.x|0, 
                       this.y|0, 
-                      (this.crop.width===undefined)?this.width:this.crop.width|0,
-                      (this.crop.height===undefined)?this.height:this.crop.height|0
+                      this.width|0,
+                      this.height|0
                      )
         ctx.restore()
     }
@@ -188,7 +244,7 @@ class SpriteSheet extends Drawable {
 }
 
 class Sprite extends Drawable {
-    constructor({ image, crop={ x: 0, y: 0, height: undefined, width: undefined }}) {
+    constructor({ image, crop={ x: 0, y: 0, height: image.naturalHeight, width: image.naturalWidth }, width=image.naturalWidth, height=image.naturalHeight}) {
         const opts = arguments[0]
         
         if (image.naturalHeight === 0)
@@ -209,12 +265,12 @@ class Sprite extends Drawable {
         ctx.drawImage(this.image, 
                       this.crop.x|0,
                       this.crop.y|0,
-                      (this.crop.width===undefined)?this.width:this.crop.width|0,
-                      (this.crop.height===undefined)?this.height:this.crop.height|0,
+                      this.crop.width|0,
+                      this.crop.height|0,
                       this.x|0,
                       this.y|0, 
-                      (this.crop.width===undefined)?this.width:this.crop.width|0, 
-                      (this.crop.height===undefined)?this.height:this.crop.height|0
+                      this.width|0, 
+                      this.height|0
                      )
         ctx.restore()
     }
@@ -429,6 +485,7 @@ const DrawableCollectionMixin = Base => class extends Base {
         })
     }
     
+    //the class that extends this must call this in draw
     _resolve() { 
         this._resolutionQueue.forEach(f => f())
         this._resolutionQueue = []
@@ -451,6 +508,12 @@ const DrawableCollectionMixin = Base => class extends Base {
         for (let i = low+1; i < arr.length; i++) {
             arr[i]._rl_index++
         }
+    }
+
+    onFrame() {
+        this._drawableArr.forEach(drawable=>{
+            if (drawable.onFrame) drawable.onFrame()
+        })
     }
 }
 
@@ -491,9 +554,6 @@ class Group extends DrawableCollectionMixin(Drawable) {
         ctx.save()
         super.prepare(ctx)
         ctx.translate(this.x, this.y)
-        //ctx.rotate(this.rot)
-        //ctx.rotate(this.rot)
-        //ctx.scale(this.scaleX,this.scaleY)
         this._resolve()
         
         for (let i = 0; i < this._drawableArr.length; i++)
@@ -524,8 +584,6 @@ function EventScene(Base) {
         }
     }
 }
-
-
 
 function LoadEventScene(Base) {
     if (!(Base.prototype instanceof Scene) && Base != Scene)
@@ -632,9 +690,7 @@ class Scene extends DrawableCollectionMixin(Object) {
             enumerable: true,
             configurable: true
         })
-        
-        
-        
+
         return view
     }
     
@@ -672,10 +728,6 @@ class Scene extends DrawableCollectionMixin(Object) {
             if (this._drawableArr[i].onStop)
                 this._drawableArr[i].onStop()
         }
-    }
-
-    static Events() {
-        return LoadEventScene(this)
     }
 }
 
