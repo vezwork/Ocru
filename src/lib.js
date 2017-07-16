@@ -21,7 +21,6 @@
         //smoothing on all drawables
         //sfx: sound.play multiple times concurrently
         //extend pressed/released input to touch
-        //clean up input (can be reduced to like half the code and more readable)
         //test touch and tilt on a real device
         //test Group and Layer more extensively
         //fix input when game is unfocused mid input
@@ -99,55 +98,110 @@ class Drawable {
         ctx.fillRect(this.x,this.y,this.width,this.height)
     }
 
-    touches(drawable) {
-        
-        const { x: tx, y: ty } = this.getCenter()
-        const { x: dx, y: dy } = drawable.getCenter()
+    static touching(drawable1, drawable2) {
+        const myDimensions = drawable1.getRealDimensions()
+        const coDimensions = drawable2.getRealDimensions()
 
-        const t = { x: dx - tx, y: dy - ty }
+        const averageCenter = { x: coDimensions.center.x - myDimensions.center.x, 
+                                y: coDimensions.center.y - myDimensions.center.y }
 
-        const myRotNormal = { x: Math.cos(this.rot), y: Math.sin(this.rot) },
-              myHWidth = this.scale.x*this.width/2,
-              myHHeight = this.scale.y*this.height/2
+        const myRotNormal = { x: Math.cos(myDimensions.rot), y: Math.sin(myDimensions.rot) },
+              myHWidth = myDimensions.width/2,
+              myHHeight = myDimensions.height/2
 
-        const coRotNormal = { x: Math.cos(drawable.rot), y: Math.sin(drawable.rot) },
-              coHWidth = drawable.scale.x*drawable.width/2,
-              coHHeight = drawable.scale.y*drawable.height/2
+        const coRotNormal = { x: Math.cos(coDimensions.rot), y: Math.sin(coDimensions.rot) },
+              coHWidth = coDimensions.width/2,
+              coHHeight = coDimensions.height/2
 
-        const r1 = Math.abs(t.x * myRotNormal.x + t.y * myRotNormal.y) > myHWidth +
+        const seperation1 = Math.abs(averageCenter.x * myRotNormal.x + averageCenter.y * myRotNormal.y) > myHWidth +
                  Math.abs(coHWidth * (coRotNormal.x * myRotNormal.x + coRotNormal.y * myRotNormal.y)) +
                  Math.abs(coHHeight * (-coRotNormal.y * myRotNormal.x + coRotNormal.x * myRotNormal.y))
         
-        const r2 = Math.abs(t.x * -myRotNormal.y + t.y * myRotNormal.x) > myHHeight +
+        const seperation2 = Math.abs(averageCenter.x * -myRotNormal.y + averageCenter.y * myRotNormal.x) > myHHeight +
                  Math.abs(coHWidth * (coRotNormal.x * -myRotNormal.y + coRotNormal.y * myRotNormal.x)) +
                  Math.abs(coHHeight * (-coRotNormal.y * -myRotNormal.y + coRotNormal.x * myRotNormal.x))    
 
-        const r3 = Math.abs(t.x * coRotNormal.x + t.y * coRotNormal.y) > coHWidth +
-                 Math.abs(myHWidth * (myRotNormal.x * coRotNormal.x + myRotNormal.y * coRotNormal.y)) +
-                 Math.abs(myHHeight * (-myRotNormal.y * coRotNormal.x + myRotNormal.x * coRotNormal.y))  
+        if (myDimensions.rot % 90 !== coDimensions.rot % 90) { //experimental optimization
+            const seperation3 = Math.abs(averageCenter.x * coRotNormal.x + averageCenter.y * coRotNormal.y) > coHWidth +
+                    Math.abs(myHWidth * (myRotNormal.x * coRotNormal.x + myRotNormal.y * coRotNormal.y)) +
+                    Math.abs(myHHeight * (-myRotNormal.y * coRotNormal.x + myRotNormal.x * coRotNormal.y))  
 
-        const r4 = Math.abs(t.x * -coRotNormal.y + t.y * coRotNormal.x) > coHHeight +
-                 Math.abs(myHWidth * (myRotNormal.x * -coRotNormal.y + myRotNormal.y * coRotNormal.x)) +
-                 Math.abs(myHHeight * (-myRotNormal.y * -coRotNormal.y + myRotNormal.x * coRotNormal.x))  
+            const seperation4 = Math.abs(averageCenter.x * -coRotNormal.y + averageCenter.y * coRotNormal.x) > coHHeight +
+                    Math.abs(myHWidth * (myRotNormal.x * -coRotNormal.y + myRotNormal.y * coRotNormal.x)) +
+                    Math.abs(myHHeight * (-myRotNormal.y * -coRotNormal.y + myRotNormal.x * coRotNormal.x))  
 
-        return !(r1 || r2 || r3 || r4)
+            return !(seperation1 || seperation2 || seperation3 || seperation4)
+        }
+
+        return !(seperation1 || seperation2)
     }
 
-    getCenter() {
-        const centerOffsetWidth  = this.x + ((this.origin.x !== undefined)? this.origin.x : this.width/2)|0
-        const centerOffsetHeight = this.y + ((this.origin.y !== undefined)? this.origin.y : this.height/2)|0
+    isTouching(touchee, condition) {
+        if (condition) {
+            if (condition.prototype instanceof Drawable) {
+                if (!(this instanceof condition))
+                    return false
+            } else if (typeof condition === 'function' && !condition(this)) {
+                return false
+            }
+        }
 
-        const cosa = Math.cos(this.rot)
-        const sina = Math.sin(this.rot)
-        var centerX = (this.x + this.width/2 - centerOffsetWidth) * this.scale.x
-        var centerY = (this.y + this.height/2 - centerOffsetHeight) * this.scale.y
+        if (touchee instanceof Drawable) {
+            return Drawable.touching(this, touchee)
+        } else {
+            let cur = this
+            while(cur.parent !== undefined)
+                cur = cur.parent
 
-        return { 
+            return cur.isTouching(this, touchee)
+        }
+    }
+
+    getRealDimensions() {
+        let centerOffsetWidth  = this.x + ((this.origin.x !== undefined)? this.origin.x : this.width/2)|0
+        let centerOffsetHeight = this.y + ((this.origin.y !== undefined)? this.origin.y : this.height/2)|0
+
+        let cosa = Math.cos(this.rot)
+        let sina = Math.sin(this.rot)
+        const centerX = (this.x + this.width/2 - centerOffsetWidth) * this.scale.x
+        const centerY = (this.y + this.height/2 - centerOffsetHeight) * this.scale.y
+
+        const dimensions = {
+            rot: this.rot,
+            center: { 
                 x: (centerX * cosa) - (centerY * sina) + centerOffsetWidth, 
                 y: (centerX * sina) + (centerY * cosa) + centerOffsetHeight
-               }
+            },
+            height: this.height * this.scale.y,
+            width: this.width * this.scale.x
+        }        
+
+        let cur = this.parent
+
+        while (cur instanceof Drawable) {
+            centerOffsetWidth  = cur.x + ((cur.origin.x !== undefined)? cur.origin.x : cur.width/2)|0
+            centerOffsetHeight = cur.y + ((cur.origin.y !== undefined)? cur.origin.y : cur.height/2)|0
+
+            const relX = dimensions.center.x - centerOffsetWidth
+            const relY = dimensions.center.y - centerOffsetHeight
+
+            cosa = Math.cos(cur.rot)
+            sina = Math.sin(cur.rot)
+            
+            dimensions.rot = dimensions.rot + cur.rot,
+            dimensions.center = { 
+                    x: ((relX * cosa) - (relY * sina) + centerOffsetWidth) * cur.scale.x + cur.x, 
+                    y: ((relX * sina) + (relY * cosa) + centerOffsetHeight) * cur.scale.y + cur.y
+                },
+            dimensions.height = dimensions.height * cur.scale.x,
+            dimensions.width =  dimensions.width * cur.scale.y
+ 
+            cur = cur.parent
+        }
+
+        return dimensions
     }
-    
+
     static Events() {
         return EventDrawable(this)
     }
@@ -514,6 +568,21 @@ const DrawableCollectionMixin = Base => class extends Base {
         this._drawableArr.forEach(drawable=>{
             if (drawable.onFrame) drawable.onFrame()
         })
+    }
+
+    isTouching(drawable, condition) {
+        let touches = []
+        this._drawableArr.forEach(relatedDrawable => {
+            if (drawable !== relatedDrawable) {
+                const get = relatedDrawable.isTouching(drawable, condition)
+                if (get === true) {
+                    touches.push(relatedDrawable)
+                } else if (get !== false) {
+                    touches = touches.concat(get)
+                }
+            }
+        })
+        return touches
     }
 }
 
