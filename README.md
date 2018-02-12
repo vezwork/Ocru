@@ -1,4 +1,4 @@
-# Ocru Handbook
+# Ocru
 Ocru stands for Open Canvas Rendering Utility. Ocru is a JavaScript library for creating graphics-based applications for the web.
 Ocru provides:
 - An intuitive Object-Oriented layer that lets beginners start working with objects in the Canvas quickly, while still allowing advanced users to squeeze out every drop of power from the Canvas API.
